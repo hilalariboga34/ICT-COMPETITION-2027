@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Participant, AnalysisStatus, AnalysisError } from "../types/analysis";
+import type { Participant, AnalysisStatus, AnalysisError } from "../types/Analysis";
 
 const INITIAL_PARTICIPANTS: Participant[] = [
   { id: "1", name: "Ahmet Yılmaz", realityScore: 0, status: "idle" },
