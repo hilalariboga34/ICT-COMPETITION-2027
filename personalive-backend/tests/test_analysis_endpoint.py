@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.routes import analysis as analysis_route
 from app.main import app
 
 
@@ -38,6 +39,19 @@ def test_evaluate_returns_authentic_status() -> None:
     response = client.post("/api/v1/analysis/evaluate", json=valid_request_body())
 
     assert response.json()["status"] == "authentic"
+
+
+def test_evaluate_uses_configured_authentic_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(analysis_route.settings, "authentic_threshold", 0.80)
+
+    response = client.post("/api/v1/analysis/evaluate", json=valid_request_body())
+    response.raise_for_status()
+    response_body = response.json()
+
+    assert response_body["realityScore"] == pytest.approx(0.75)
+    assert response_body["status"] == "suspicious"
 
 
 def test_evaluate_preserves_common_fields() -> None:
