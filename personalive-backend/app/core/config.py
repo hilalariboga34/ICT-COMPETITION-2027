@@ -25,6 +25,7 @@ class Settings(BaseSettings):
             "http://127.0.0.1:1420",
         ]
     )
+    database_url: str | None = Field(default=None)
 
 
 @lru_cache
