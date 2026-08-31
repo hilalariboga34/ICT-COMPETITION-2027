@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, SmallInteger, String, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    SmallInteger,
+    String,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -19,6 +28,14 @@ class FaceSample(Base):
             "face_order",
             unique=True,
         ),
+        CheckConstraint(
+            "label IS NULL OR label IN (0, 1)",
+            name="ck_face_samples_label_binary",
+        ),
+        CheckConstraint(
+            "frame_reference >= 0", name="ck_face_samples_frame_reference_nonneg"
+        ),
+        CheckConstraint("face_order >= 0", name="ck_face_samples_face_order_nonneg"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

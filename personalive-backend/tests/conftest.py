@@ -2,9 +2,18 @@
 
 Bu testler GERÇEK bir local PostgreSQL bağlantısı ister (DATABASE_URL,
 .env üzerinden) ve şemanın önceden `alembic upgrade head` ile
-oluşturulmuş olmasını bekler. DATABASE_URL yoksa ya da veritabanına
-ulaşılamıyorsa bu testler otomatik SKIP edilir — böylece veritabanı
-kurulmamış bir ortamda (örn. mevcut CI) diğer testler bozulmaz.
+oluşturulmuş olmasını bekler. DATABASE_URL hiç tanımlı değilse bu testler
+otomatik SKIP edilir — böylece veritabanı kurulmamış bir ortamda (örn.
+DATABASE_URL'siz local çalıştırma) diğer testler bozulmaz.
+
+ÖNEMLİ (Hilal'in bulduğu nokta): DATABASE_URL TANIMLIYKEN bağlantı
+kurulamıyorsa bu artık SKIP değil, FAIL olarak görünür — yani CI'da
+DATABASE_URL set edilmiş ama Postgres servisi ayağa kalkmamışsa (ya da
+yanlış yapılandırılmışsa) testler yeşile boyanıp yanıltmaz, gerçekten
+kırmızı görünür. Bu yüzden aşağıda "bağlantı kurulabiliyor mu" diye ayrı
+bir kontrol YOK — sadece "DATABASE_URL var mı" diye bakıyoruz; bağlantı
+denemesi fixture'ların içinde (db_connection) doğal olarak yapılıyor ve
+başarısız olursa test hatası olarak patlıyor.
 """
 
 from __future__ import annotations
@@ -20,26 +29,12 @@ from app.core.config import get_settings
 
 _DATABASE_URL = get_settings().database_url
 
-
-def _db_available() -> bool:
-    if not _DATABASE_URL:
-        return False
-    try:
-        engine = create_engine(_DATABASE_URL)
-        with engine.connect():
-            pass
-        engine.dispose()
-        return True
-    except Exception:
-        return False
-
-
 requires_db = pytest.mark.skipif(
-    not _db_available(),
+    not _DATABASE_URL,
     reason=(
-        "DATABASE_URL ayarlı değil ya da local PostgreSQL'e ulaşılamıyor. "
-        "Bu testler için: .env dosyasında DATABASE_URL tanımlı olmalı ve "
-        "hedef veritabanında 'alembic upgrade head' çalıştırılmış olmalı."
+        "DATABASE_URL tanımlı değil. Bu testler için: .env dosyasında "
+        "DATABASE_URL tanımlı olmalı ve hedef veritabanında "
+        "'alembic upgrade head' çalıştırılmış olmalı."
     ),
 )
 

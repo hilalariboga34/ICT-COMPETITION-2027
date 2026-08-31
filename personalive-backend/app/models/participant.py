@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,6 +13,15 @@ from app.models.enums import ParticipantStatus, participant_status_enum
 
 class Participant(Base):
     __tablename__ = "participants"
+    __table_args__ = (
+        # analysis_results'ın composite FK ile "bu participant gerçekten bu
+        # session'a mı ait" diye doğrulayabilmesi için (id, session_id) çifti
+        # üzerinde UNIQUE gerekiyor (id zaten tek başına unique/PK, bu ek bir
+        # kısıtlama değil, composite FK'nin referans alabileceği bir kısıtlama).
+        UniqueConstraint(
+            "id", "session_id", name="uq_participants_id_session_id"
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
@@ -41,6 +50,10 @@ class Participant(Base):
     )
 
     session: Mapped["Session"] = relationship(back_populates="participants")
+    # overlaps: analysis_results.session_id, hem bu ilişki (composite FK'nin
+    # bir parçası olarak) hem de AnalysisResult.session ilişkisi tarafından
+    # "sahiplenilmiş" görünüyor SQLAlchemy'ye — bu kasıtlı (composite FK'nin
+    # amacı zaten bu), SAWarning'i bilerek susturuyoruz.
     analysis_results: Mapped[list["AnalysisResult"]] = relationship(
-        back_populates="participant"
+        back_populates="participant", overlaps="analysis_results"
     )

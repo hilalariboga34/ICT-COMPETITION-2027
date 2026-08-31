@@ -1,7 +1,7 @@
 """baseline: dataset + runtime tablolari
 
 Revision ID: 4bba2283a809
-Revises: 
+Revises:
 Create Date: 2026-08-30 17:23:12.500453
 
 """
@@ -50,6 +50,7 @@ def upgrade() -> None:
     sa.Column('method_id', sa.Integer(), nullable=False),
     sa.Column('label', sa.SmallInteger(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint('label IS NULL OR label IN (0, 1)', name='ck_dataset_videos_label_binary'),
     sa.ForeignKeyConstraint(['method_id'], ['manipulation_methods.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -62,7 +63,8 @@ def upgrade() -> None:
     sa.Column('joined_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('left_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['session_id'], ['sessions.id'], ondelete='RESTRICT'),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('id', 'session_id', name='uq_participants_id_session_id')
     )
     op.create_index(op.f('ix_participants_session_id'), 'participants', ['session_id'], unique=False)
     op.create_table('session_events',
@@ -90,7 +92,7 @@ def upgrade() -> None:
     sa.CheckConstraint('confidence >= 0.0 AND confidence <= 1.0', name='ck_analysis_results_confidence_range'),
     sa.CheckConstraint('reality_score >= 0.0 AND reality_score <= 1.0', name='ck_analysis_results_reality_score_range'),
     sa.ForeignKeyConstraint(['model_version_id'], ['model_versions.id'], ondelete='RESTRICT'),
-    sa.ForeignKeyConstraint(['participant_id'], ['participants.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['participant_id', 'session_id'], ['participants.id', 'participants.session_id'], ondelete='RESTRICT', name='fk_analysis_results_participant_session'),
     sa.ForeignKeyConstraint(['session_id'], ['sessions.id'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -106,6 +108,9 @@ def upgrade() -> None:
     sa.Column('label', sa.SmallInteger(), nullable=True),
     sa.Column('relative_path', sa.String(length=512), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint('label IS NULL OR label IN (0, 1)', name='ck_face_samples_label_binary'),
+    sa.CheckConstraint('frame_reference >= 0', name='ck_face_samples_frame_reference_nonneg'),
+    sa.CheckConstraint('face_order >= 0', name='ck_face_samples_face_order_nonneg'),
     sa.ForeignKeyConstraint(['dataset_video_id'], ['dataset_videos.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )

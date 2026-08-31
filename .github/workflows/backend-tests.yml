@@ -10,6 +10,7 @@ on:
   push:
     branches:
       - backend-gelistirme
+      - database-gelistirme
     paths:
       - "personalive-backend/**"
       - ".github/workflows/backend-tests.yml"
@@ -29,6 +30,25 @@ jobs:
       run:
         working-directory: personalive-backend
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: personalive_backend_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/personalive_backend_ci
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/personalive_backend_ci_test
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -46,5 +66,19 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
 
-      - name: Run tests
-        run: python -m pytest -v
+      - name: Create migration-test database
+        run: PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE personalive_backend_ci_test;"
+
+      - name: Apply migrations (main test database)
+        run: python -m alembic upgrade head
+
+      - name: Apply migrations (migration-test database)
+        run: python -m alembic upgrade head
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+
+      - name: Run tests (excluding destructive migration test)
+        run: python -m pytest -v --deselect tests/test_migrations.py::test_downgrade_then_upgrade_head_succeeds
+
+      - name: Run migration test
+        run: python -m pytest tests/test_migrations.py -v

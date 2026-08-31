@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, SmallInteger, String, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    SmallInteger,
+    String,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -10,6 +17,12 @@ from app.models.base import Base
 
 class DatasetVideo(Base):
     __tablename__ = "dataset_videos"
+    __table_args__ = (
+        CheckConstraint(
+            "label IS NULL OR label IN (0, 1)",
+            name="ck_dataset_videos_label_binary",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     source_video_id: Mapped[str] = mapped_column(
