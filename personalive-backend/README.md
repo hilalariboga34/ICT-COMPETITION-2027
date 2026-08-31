@@ -182,6 +182,22 @@ WebSocket bağlantıları yalnızca çalışan uygulama sürecinin belleğinde (
 
 Swagger UI WebSocket bağlantılarını doğrudan test etmez. WebSocket testleri için tarayıcı geliştirici araçları veya uygun bir WebSocket istemcisi kullanılmalıdır.
 
+## Mock AI Publisher
+
+Mock publisher'ı kullanmadan önce backend'i bir terminalde çalıştırın:
+
+```bash
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Frontend'i gerçek AI inference entegrasyonundan bağımsız test etmek için ikinci bir terminalde aynı sanal ortamı etkinleştirip publisher'ı çalıştırın:
+
+```bash
+python -m scripts.mock_analysis_publisher --session-id 11111111-1111-4111-8111-111111111111
+```
+
+Frontend WebSocket istemcisi aynı session ID ile `ws://127.0.0.1:8000/api/v1/ws/sessions/11111111-1111-4111-8111-111111111111` adresine bağlanmalıdır. Publisher düzenli mock analiz girdileri gönderir; backend bunları normal REST ve WebSocket akışından geçirir. Bu araç gerçek AI inference yapmaz, video veya görüntü işlemez ve yalnızca local geliştirme simülasyonu içindir.
+
 ## Testler
 
 Sanal ortam aktifken aşağıdaki komut tüm testleri çalıştırır:
