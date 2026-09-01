@@ -1,8 +1,9 @@
-// Marka/isim/logo ileride değişebilir
-// Kod içinde hiçbir yerde "FakeSent" string'i doğrudan yazılmaz, hep buradan okunur.
+// Marka/isim/logo merkezi olarak buradan yönetilir.
+// Kod içinde marka adı doğrudan yazılmaz, APP_CONFIG üzerinden okunur.
+
 export const APP_CONFIG = {
-  name: "FakeSent",
-  shortName: "FS",
+  name: "PersonaLive",
+  shortName: "PL",
   version: "0.1.0-mvp",
   theme: {
     accent: "cyan", // marka rengi netleşene kadar nötr varsayılan

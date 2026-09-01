@@ -1,106 +1,166 @@
 import { create } from "zustand";
-import type { Participant, AnalysisStatus, AnalysisError } from "../types/analysis";
+import type { AnalysisResult, Session } from "../types/backend";
+import type { ParticipantViewModel } from "../types/viewModels";
 
-const INITIAL_PARTICIPANTS: Participant[] = [
-  { id: "1", name: "Ahmet Yılmaz", realityScore: 0, status: "idle" },
-  { id: "2", name: "Mehmet Demir", realityScore: 0, status: "idle" },
-  { id: "3", name: "Ayşe Kaya", realityScore: 0, status: "idle" },
-  { id: "4", name: "Veli Çelik", realityScore: 0, status: "idle", isDemoTarget: true },
-  { id: "5", name: "Fatma Yıldırım", realityScore: 0, status: "idle" },
-  { id: "6", name: "Ali Yıldız", realityScore: 0, status: "idle" },
-  { id: "7", name: "Elif Öztürk", realityScore: 0, status: "idle", isDemoTarget: true },
-  { id: "8", name: "Can Arslan", realityScore: 0, status: "idle" },
-  { id: "9", name: "Zeynep Koç", realityScore: 0, status: "idle" },
-];
+export type AnalysisConnectionState =
+  | "idle"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "disconnected";
 
 interface AnalysisStoreState {
-  status: AnalysisStatus;
-  participants: Participant[];
-  simulationInterval: number | null;
-  currentError: AnalysisError | null;
+  session: Session | null;
+  participants: ParticipantViewModel[];
+  removedParticipants: ParticipantViewModel[];
+  isLoading: boolean;
+  connectionState: AnalysisConnectionState;
+  error: string | null;
 
-  startAnalysis: () => void;
-  stopAnalysis: () => void;
-  kickParticipant: (id: string) => void;
+  setSession: (session: Session | null) => void;
+  setParticipants: (participants: ParticipantViewModel[]) => void;
+  setSnapshot: (
+    session: Session,
+    participants: ParticipantViewModel[],
+  ) => void;
+  applyAnalysisResult: (result: AnalysisResult) => void;
+  setParticipantDisconnected: (
+    participantId: string,
+    leftAt?: string | null,
+  ) => void;
+  removeParticipantForDemo: (participantId: string) => void;
+  setLoading: (isLoading: boolean) => void;
+  setConnectionState: (connectionState: AnalysisConnectionState) => void;
+  setError: (error: string | null) => void;
   reset: () => void;
-  setError: (error: AnalysisError | null) => void;
-  clearError: () => void;
 }
 
-export const useAnalysisStore = create<AnalysisStoreState>((set, get) => ({
-  status: "idle",
-  participants: INITIAL_PARTICIPANTS,
-  simulationInterval: null,
-  currentError: null,
+function isIncomingAnalysisNewer(
+  incomingTimestamp: string,
+  currentTimestamp: string,
+): boolean {
+  const incomingTime = Date.parse(incomingTimestamp);
+  const currentTime = Date.parse(currentTimestamp);
 
-  startAnalysis: () => {
-    set({ status: "analyzing", currentError: null });
-    
-    set((state) => ({
-      participants: state.participants.map(p => ({
-        ...p,
-        realityScore: p.isDemoTarget ? Math.floor(Math.random() * 15) + 40 : Math.floor(Math.random() * 13) + 85,
-        status: p.isDemoTarget ? "suspicious" : "safe"
-      }))
-    }));
+  if (Number.isFinite(incomingTime) && Number.isFinite(currentTime)) {
+    return incomingTime > currentTime;
+  }
 
-    const interval = setInterval(() => {
-      set((state) => ({
-        participants: state.participants.map(p => {
-          // Atılan veya atılmakta olan kişilerin skorlarını dondur
-          if (p.status === "kicked" || p.status === "kicking") return p;
+  return incomingTimestamp > currentTimestamp;
+}
 
-          const fluctuation = Math.floor(Math.random() * 5) - 2; 
-          let newScore = p.realityScore + fluctuation;
+export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
+  session: null,
+  participants: [],
+  removedParticipants: [],
+  isLoading: false,
+  connectionState: "idle",
+  error: null,
 
-          if (p.isDemoTarget) {
-            newScore = Math.max(30, Math.min(58, newScore));
-          } else {
-            newScore = Math.max(80, Math.min(99, newScore));
-          }
+  setSession: (session) => set({ session }),
 
-          return { 
-            ...p, 
-            realityScore: newScore,
-            status: newScore < 60 ? "suspicious" : "safe"
-          };
-        })
-      }));
-    }, 1000) as unknown as number;
+  setParticipants: (participants) => set({ participants }),
 
-    set({ simulationInterval: interval });
-  },
+  setSnapshot: (session, participants) =>
+    set({
+      session,
+      participants,
+      isLoading: false,
+      error: null,
+    }),
 
-  stopAnalysis: () => {
-    const { simulationInterval } = get();
-    if (simulationInterval) clearInterval(simulationInterval);
-    set({ status: "completed", simulationInterval: null });
-  },
+  applyAnalysisResult: (result) =>
+    set((state) => {
+      const participantIndex = state.participants.findIndex(
+        ({ participant }) =>
+          participant.participantId === result.participantId,
+      );
 
-  kickParticipant: (id: string) => {
-    // 1. Önce durumu "çıkarılıyor" yap (Ekrandaki animasyon için)
-    set((state) => ({
-      participants: state.participants.map(p => 
-        p.id === id ? { ...p, status: "kicking" } : p
-      )
-    }));
+      if (participantIndex === -1) return state;
 
-    // 2. 1.5 saniye sonra sistemden tamamen (kicked) çıkar
-    setTimeout(() => {
-      set((state) => ({
-        participants: state.participants.map(p => 
-          p.id === id ? { ...p, status: "kicked", realityScore: 0 } : p
+      const currentParticipant = state.participants[participantIndex];
+      if (
+        currentParticipant.latestAnalysis &&
+        !isIncomingAnalysisNewer(
+          result.timestamp,
+          currentParticipant.latestAnalysis.timestamp,
         )
-      }));
-    }, 1500);
-  },
+      ) {
+        return state;
+      }
 
-  reset: () => {
-    const { simulationInterval } = get();
-    if (simulationInterval) clearInterval(simulationInterval);
-    set({ status: "idle", participants: INITIAL_PARTICIPANTS, simulationInterval: null, currentError: null });
-  },
+      const participants = [...state.participants];
+      participants[participantIndex] = {
+        participant: {
+          ...currentParticipant.participant,
+          status: result.status,
+        },
+        latestAnalysis: result,
+      };
 
-  setError: (error) => set({ currentError: error }),
-  clearError: () => set({ currentError: null }),
+      return { participants };
+    }),
+
+  setParticipantDisconnected: (participantId, leftAt) =>
+    set((state) => ({
+      participants: state.participants.map((viewModel) =>
+        viewModel.participant.participantId === participantId
+          ? {
+              ...viewModel,
+              participant: {
+                ...viewModel.participant,
+                status: "disconnected",
+                leftAt:
+                  leftAt === undefined
+                    ? viewModel.participant.leftAt
+                    : leftAt,
+              },
+            }
+          : viewModel,
+      ),
+    })),
+
+  removeParticipantForDemo: (participantId) =>
+    set((state) => {
+      const participantIndex = state.participants.findIndex(
+        ({ participant }) => participant.participantId === participantId,
+      );
+
+      if (
+        participantIndex === -1 ||
+        state.removedParticipants.some(
+          ({ participant }) => participant.participantId === participantId,
+        )
+      ) {
+        return state;
+      }
+
+      const removedParticipant = state.participants[participantIndex];
+
+      return {
+        participants: state.participants.filter(
+          ({ participant }) => participant.participantId !== participantId,
+        ),
+        removedParticipants: [
+          ...state.removedParticipants,
+          removedParticipant,
+        ],
+      };
+    }),
+
+  setLoading: (isLoading) => set({ isLoading }),
+
+  setConnectionState: (connectionState) => set({ connectionState }),
+
+  setError: (error) => set({ error }),
+
+  reset: () =>
+    set({
+      session: null,
+      participants: [],
+      removedParticipants: [],
+      isLoading: false,
+      connectionState: "idle",
+      error: null,
+    }),
 }));
