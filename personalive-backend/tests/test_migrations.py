@@ -6,10 +6,14 @@ yüzden asıl geliştirme veritabanı olan DATABASE_URL'i KULLANMAZ, ayrı bir
 TEST_DATABASE_URL gerektirir (bkz. DATABASE.md, "Migration testi için
 ayrı veritabanı"). TEST_DATABASE_URL tanımlı değilse bu test SKIP edilir.
 
-Güvenlik: hedef veritabanının adında açıkça "test" segmenti yoksa
-(örn. yanlışlıkla DATABASE_URL ile aynı veritabanı verilmişse) test
-çalışmayı reddeder (FAIL, SKIP değil) — böylece yanlışlıkla gerçek/
-geliştirme veritabanı silinip yeniden oluşturulamaz.
+Güvenlik: iki ayrı kontrol var, ikisi de FAIL verir (SKIP değil):
+1) TEST_DATABASE_URL, DATABASE_URL ile AYNI veritabanını gösteriyorsa
+   (host + port + veritabanı adı aynıysa) — kullanıcı adı/şifre farklı
+   yazılmış olsa bile yakalanır.
+2) Veritabanı adında açıkça "test" segmenti yoksa (örn. yanlışlıkla
+   başka bir gerçek veritabanı verilmişse).
+Böylece yanlışlıkla gerçek/geliştirme veritabanı silinip yeniden
+oluşturulamaz.
 
 Diğer DB testleriyle karışık sırada DEĞİL, tek başına çalıştırılması
 önerilir:
@@ -33,6 +37,7 @@ from sqlalchemy import create_engine, text
 from app.core.config import get_settings
 
 _TEST_DATABASE_URL = get_settings().test_database_url
+_DATABASE_URL = get_settings().database_url
 
 requires_test_db = pytest.mark.skipif(
     not _TEST_DATABASE_URL,
@@ -49,6 +54,33 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 def _database_name(url: str) -> str:
     # SQLAlchemy URL'sinde path kısmı "/veritabani_adi" şeklinde gelir.
     return urlsplit(url).path.lstrip("/")
+
+
+def _database_identity(url: str) -> tuple[str | None, int | None, str]:
+    # Kullanıcı adı/şifre farklı yazılmış olsa bile "aynı veritabanı mı"
+    # sorusunun cevabı host + port + veritabanı adı üçlüsüdür.
+    parts = urlsplit(url)
+    return (parts.hostname, parts.port, parts.path.lstrip("/"))
+
+
+def _ensure_not_same_as_database_url(test_url: str, database_url: str | None) -> None:
+    """Hilal'in bulduğu nokta: TEST_DATABASE_URL, asıl DATABASE_URL ile
+    AYNI veritabanını gösteriyorsa bu test kesinlikle FAIL vermeli —
+    yoksa downgrade/upgrade döngüsü doğrudan geliştirme verisini bozar.
+    "test" isim kontrolünden AYRI ve ondan ÖNCE çalışır: isimde "test"
+    geçse bile, iki adres aynı veritabanını gösteriyorsa yine reddedilir.
+    """
+    if database_url is None:
+        return
+    if _database_identity(test_url) == _database_identity(database_url):
+        pytest.fail(
+            "TEST_DATABASE_URL, DATABASE_URL ile AYNI veritabanını "
+            "gösteriyor. Migration testi downgrade/upgrade yaptığı için "
+            "bu durumda asıl geliştirme veritabanını bozar — bu yüzden "
+            "reddedildi. TEST_DATABASE_URL'i ayrı, sadece bu test için "
+            "var olan bir veritabanına (örn. personalive_backend_test_db) "
+            "yönlendir."
+        )
 
 
 def _ensure_looks_like_test_database(url: str) -> None:
@@ -90,8 +122,34 @@ def _current_head() -> str:
     return head
 
 
+def test_ensure_not_same_as_database_url_rejects_identical_database() -> None:
+    """Hilal'in bulduğu nokta: TEST_DATABASE_URL, DATABASE_URL ile aynı
+    veritabanını gösteriyorsa (host+port+ad aynıysa) reddedilmeli —
+    kullanıcı adı/şifre farklı yazılmış olsa bile. Gerçek DB bağlantısı
+    gerektirmez, saf bir birim testidir."""
+    database_url = "postgresql+psycopg://app:secret@localhost:5432/personalive_backend_test_db"
+    test_url_same_db_different_creds = (
+        "postgresql+psycopg://baska_kullanici:baska_sifre@localhost:5432/"
+        "personalive_backend_test_db"
+    )
+    with pytest.raises(pytest.fail.Exception):
+        _ensure_not_same_as_database_url(test_url_same_db_different_creds, database_url)
+
+
+def test_ensure_not_same_as_database_url_allows_genuinely_different_database() -> None:
+    database_url = "postgresql+psycopg://app:secret@localhost:5432/personalive_backend_db"
+    test_url = "postgresql+psycopg://app:secret@localhost:5432/personalive_backend_test_db"
+    _ensure_not_same_as_database_url(test_url, database_url)  # exception atmamalı
+
+
+def test_ensure_not_same_as_database_url_allows_when_database_url_unset() -> None:
+    test_url = "postgresql+psycopg://app:secret@localhost:5432/personalive_backend_test_db"
+    _ensure_not_same_as_database_url(test_url, None)  # exception atmamalı
+
+
 @requires_test_db
 def test_downgrade_then_upgrade_head_succeeds() -> None:
+    _ensure_not_same_as_database_url(_TEST_DATABASE_URL, _DATABASE_URL)
     _ensure_looks_like_test_database(_TEST_DATABASE_URL)
 
     head = _current_head()

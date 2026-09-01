@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - backend-gelistirme
     paths:
       - "personalive-backend/**"
       - ".github/workflows/backend-tests.yml"

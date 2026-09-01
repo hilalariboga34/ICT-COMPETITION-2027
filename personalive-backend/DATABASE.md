@@ -85,9 +85,11 @@ TEST_DATABASE_URL=postgresql+psycopg://personalive_backend_app:kendi-sifreni-yaz
 ```
 
 `TEST_DATABASE_URL` tanımlı değilse `test_migrations.py` otomatik SKIP olur — diğer
-testleri etkilemez. Veritabanı adında "test" segmenti yoksa (örn. yanlışlıkla
-`personalive_backend_db`'nin kendisi verilmişse) test çalışmayı reddedip FAIL verir;
-bu bilinçli bir güvenlik kontrolü.
+testleri etkilemez. İki ayrı güvenlik kontrolü var, ikisi de FAIL verir (SKIP değil):
+`TEST_DATABASE_URL`, `DATABASE_URL` ile AYNI veritabanını gösteriyorsa (host+port+ad aynıysa,
+kullanıcı adı/şifre farklı yazılmış olsa bile) reddedilir; ayrıca veritabanı adında "test"
+segmenti yoksa (örn. yanlışlıkla `personalive_backend_db`'nin kendisi verilmişse) yine
+reddedilir. İkisi de bilinçli güvenlik kontrolleri.
 
 ### 4. Python bağımlılıkları
 
@@ -247,3 +249,12 @@ geçtiğini gösteriyor, sadece "DATABASE_URL yok, skip edildi" anlamına gelmiy
 - **CI branch'i:** Workflow artık `database-gelistirme` push'larında da çalışıyor (öncesinde
   sadece `backend-gelistirme` ve `main`'e PR'larda çalışıyordu) — bu sayede bu düzeltmeler
   push'landığında CI sonucu gerçek zamanlı görülebiliyor, merge'e kadar beklemek gerekmiyor.
+- **CI'da PR hedefi olarak `backend-gelistirme` eklendi:** Öncesinde sadece `main`'e açılan
+  PR'larda testler zorunlu çalışıyordu; artık `database-gelistirme -> backend-gelistirme`
+  gibi bir PR açıldığında da testler otomatik çalışıp PR'ın yanında yeşil/kırmızı sonuç
+  gösteriyor.
+- **"Aynı veritabanı" kontrolü:** "Test veritabanı mı" isim kontrolüne ek olarak,
+  `TEST_DATABASE_URL` ile `DATABASE_URL`'in host+port+veritabanı adı üçlüsü karşılaştırılıyor;
+  ikisi birebir aynı veritabanını gösteriyorsa (adında "test" geçse bile) test FAIL verip
+  durur. Bu, isim kontrolünün tek başına yakalayamayacağı durumu kapatıyor: örneğin biri
+  yanlışlıkla iki ortam değişkenini de aynı test veritabanına ayarlarsa.
