@@ -25,6 +25,11 @@ class Settings(BaseSettings):
             "http://127.0.0.1:1420",
         ]
     )
+    database_url: str | None = Field(default=None)
+    # Sadece tests/test_migrations.py için: downgrade/upgrade döngüsü
+    # DESTRUCTIVE olduğundan ayrı bir veritabanına yönlendirilir, asıl
+    # DATABASE_URL'e asla dokunmaz (bkz. DATABASE.md).
+    test_database_url: str | None = Field(default=None)
 
 
 @lru_cache

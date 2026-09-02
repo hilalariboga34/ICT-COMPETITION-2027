@@ -15,8 +15,9 @@ Backend ham video, video karesi (frame) veya görüntü saklamaz. Mevcut sürüm
 - Pytest ile şema, servis, REST endpoint, WebSocket, config ve CORS testleri.
 - GitHub Actions ile sürekli entegrasyon (Continuous Integration, CI).
 - Session ve participant için Pydantic veri sözleşmeleri.
+- PostgreSQL şeması: SQLAlchemy 2 modelleri + Alembic migration'ları (bkz. [`DATABASE.md`](./DATABASE.md)). 8 tablo: AI eğitim veri seti metadata'sı (3) + uygulama runtime verisi (5: sessions, participants, analysis_results, model_versions, session_events).
 
-PostgreSQL entegrasyonu henüz tamamlanmamıştır. Session ve participant sözleşmeleri mevcut olsa da bunlara ait REST endpoint'leri veya kalıcı veri katmanı bulunmaz.
+**Önemli:** Yukarıdaki şema henüz REST/WebSocket route'larına BAĞLANMADI — `POST /api/v1/analysis/evaluate` hâlâ tamamen bellekte (in-memory) çalışıyor, hiçbir şeyi veritabanına yazmıyor. Route'ları veritabanına bağlamak (persist etme) ayrı, sonraki bir adım.
 
 ## Teknolojiler
 
@@ -29,12 +30,13 @@ Mevcut teknolojiler:
 - Uvicorn
 - Pytest
 - WebSocket
+- PostgreSQL (şema hazır, route entegrasyonu henüz yok)
+- SQLAlchemy 2
+- Alembic veritabanı migrasyonları (database migrations)
 
 Planlanan entegrasyonlar:
 
-- PostgreSQL
-- SQLAlchemy
-- Alembic veritabanı migrasyonları (database migrations)
+- Yukarıdaki veritabanı şemasının REST/WebSocket route'larına bağlanması
 
 ## Proje yapısı
 
@@ -42,12 +44,17 @@ Planlanan entegrasyonlar:
 personalive-backend/
 ├── app/
 │   ├── api/routes/    # REST ve WebSocket route tanımları
-│   ├── core/          # Merkezi uygulama ve environment ayarları
+│   ├── core/          # Merkezi uygulama ve environment ayarları (DATABASE_URL dahil)
+│   ├── db/            # SQLAlchemy engine/session yönetimi + dataset seed script'i
+│   ├── models/        # SQLAlchemy ORM modelleri (8 tablo)
 │   ├── realtime/      # In-memory WebSocket bağlantı yönetimi
 │   ├── schemas/       # Pydantic API veri sözleşmeleri
 │   └── services/      # Analiz hesaplama ve dönüşüm mantığı
-└── tests/             # Pytest otomatik testleri
+├── alembic/           # Veritabanı migration'ları
+└── tests/             # Pytest otomatik testleri (config + veritabanı testleri)
 ```
+
+Veritabanı kurulumu, migration komutları ve tasarım kararları için: [`DATABASE.md`](./DATABASE.md).
 
 ## Windows PowerShell ile local kurulum
 
@@ -212,12 +219,13 @@ Test sayısı proje geliştikçe artabileceği için burada sabit bir sayı tutu
 
 - Ham video, video karesi (frame) veya görüntü veritabanına kaydedilmez.
 - Backend şu anda session ve participant kimlikleri, timestamp, model versiyonu, güven değeri ve analiz skoru gibi metadata alanlarını işler.
-- Kalıcı veritabanı entegrasyonu henüz bulunmamaktadır.
+- Veritabanı şeması da aynı prensiple tasarlandı: hiçbir tabloda ham video/kare/görüntü/base64/binary veri yok, sadece kimlik/zaman/skor/durum/model versiyonu metadata'sı (bkz. `DATABASE.md`).
+- Route'lar henüz veritabanına yazmıyor (bkz. yukarıdaki "Önemli" notu) — kalıcı veri katmanı entegrasyonu ayrı bir adım.
 - Gerçek kimlik doğrulama (authentication) ve yetkilendirme (authorization) henüz eklenmemiştir.
 
 ## Henüz tamamlanmayanlar
 
-- PostgreSQL, SQLAlchemy ve Alembic entegrasyonu
+- Veritabanı şemasının REST/WebSocket route'larına bağlanması (şu an route'lar in-memory)
 - Session ve participant REST endpoint'leri
 - Gerçek AI inference entegrasyonu
 - Frontend REST ve WebSocket entegrasyonu
