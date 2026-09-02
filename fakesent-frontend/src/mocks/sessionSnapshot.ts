@@ -63,7 +63,7 @@ export const MOCK_PARTICIPANTS: ParticipantViewModel[] = [
   },
   {
     participant: {
-      participantId: "participant-004",
+      participantId: "3acf5780-e1f8-5c01-8234-87d46415d81a",
       sessionId: DEMO_SESSION_ID,
       displayName: "Elif Öztürk",
       status: "disconnected",
@@ -72,7 +72,7 @@ export const MOCK_PARTICIPANTS: ParticipantViewModel[] = [
     },
     latestAnalysis: {
       sessionId: DEMO_SESSION_ID,
-      participantId: "participant-004",
+      participantId: "3acf5780-e1f8-5c01-8234-87d46415d81a",
       realityScore: 0.82,
       confidence: 0.89,
       status: "authentic",
