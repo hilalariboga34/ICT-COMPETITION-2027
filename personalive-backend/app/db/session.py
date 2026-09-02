@@ -34,6 +34,21 @@ def get_sessionmaker() -> sessionmaker:
     return _SessionLocal
 
 
+def get_db_session() -> Iterator[SASession]:
+    """FastAPI dependency that provides one SQLAlchemy session per request.
+
+    Transaction boundaries belong to the service using the session. Keeping this
+    dependency separate from ``get_session`` also lets API tests replace it with
+    the rollback-protected ``db_session`` fixture.
+    """
+    session_local = get_sessionmaker()
+    session = session_local()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
 @contextmanager
 def get_session() -> Iterator[SASession]:
     """`with get_session() as session:` şeklinde kullanılır.
