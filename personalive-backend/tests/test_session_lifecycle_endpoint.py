@@ -11,6 +11,8 @@ from app.db.session import get_db_session
 from app.main import app
 from app.models.participant import Participant
 from app.models.session import Session as SessionModel
+from app.repositories.session import SessionRepository
+from app.services.sessions import SessionService
 from tests.conftest import requires_db
 
 
@@ -215,3 +217,65 @@ def test_end_session_does_not_break_get_session_endpoint(
 
     assert response.status_code == 200
     assert response.json()["status"] == "ended"
+
+
+# --- concurrency: start/end must request a row lock -----------------------
+
+
+def test_start_requests_row_lock(
+    db_session: DBSession, session: SessionModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original_get_by_id = SessionRepository.get_by_id
+    calls: list[bool] = []
+
+    def spy_get_by_id(
+        self: SessionRepository, session_id, *, for_update: bool = False
+    ):
+        calls.append(for_update)
+        return original_get_by_id(self, session_id, for_update=for_update)
+
+    monkeypatch.setattr(SessionRepository, "get_by_id", spy_get_by_id)
+
+    SessionService(db_session).start(session.id)
+
+    assert calls == [True]
+
+
+def test_end_requests_row_lock(
+    db_session: DBSession, session: SessionModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    SessionService(db_session).start(session.id)
+
+    original_get_by_id = SessionRepository.get_by_id
+    calls: list[bool] = []
+
+    def spy_get_by_id(
+        self: SessionRepository, session_id, *, for_update: bool = False
+    ):
+        calls.append(for_update)
+        return original_get_by_id(self, session_id, for_update=for_update)
+
+    monkeypatch.setattr(SessionRepository, "get_by_id", spy_get_by_id)
+
+    SessionService(db_session).end(session.id)
+
+    assert calls == [True]
+
+
+def test_get_session_service_does_not_request_row_lock(
+    db_session: DBSession, session: SessionModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original_get_by_id = SessionRepository.get_by_id
+    calls: list[bool] = []
+
+    def spy_get_by_id(
+        self: SessionRepository, session_id, *, for_update: bool = False
+    ):
+        calls.append(for_update)
+        return original_get_by_id(self, session_id, for_update=for_update)
+
+    monkeypatch.setattr(SessionRepository, "get_by_id", spy_get_by_id)
+
+    SessionService(db_session).get_by_id(session.id)
+
+    assert calls == [False]

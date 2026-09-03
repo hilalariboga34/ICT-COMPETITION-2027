@@ -58,7 +58,10 @@ class SessionService:
 
     def start(self, session_id: UUID) -> SessionResponse:
         try:
-            session = self.repository.get_by_id(session_id)
+            # for_update=True: eşzamanlı iki start isteğinin ikisinin de
+            # aynı waiting status'u okuyup ikisinin de geçişi geçerli
+            # sanmasını (race condition) engellemek için satırı kilitler.
+            session = self.repository.get_by_id(session_id, for_update=True)
             if session is None:
                 raise SessionNotFoundError(session_id)
 
@@ -81,7 +84,11 @@ class SessionService:
 
     def end(self, session_id: UUID) -> SessionResponse:
         try:
-            session = self.repository.get_by_id(session_id)
+            # for_update=True: eşzamanlı iki end isteğinin (ya da bir end ile
+            # çakışan bir start'ın) aynı active status'u okuyup ikisinin de
+            # geçişi geçerli sanmasını (race condition) engellemek için
+            # satırı kilitler.
+            session = self.repository.get_by_id(session_id, for_update=True)
             if session is None:
                 raise SessionNotFoundError(session_id)
 

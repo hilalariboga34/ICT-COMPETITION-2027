@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session as DBSession
 
 from app.models.enums import SessionStatus
@@ -20,8 +21,24 @@ class SessionRepository:
         self.db_session.refresh(session)
         return session
 
-    def get_by_id(self, session_id: UUID) -> SessionModel | None:
-        return self.db_session.get(SessionModel, session_id)
+    def get_by_id(
+        self, session_id: UUID, *, for_update: bool = False
+    ) -> SessionModel | None:
+        if not for_update:
+            return self.db_session.get(SessionModel, session_id)
+
+        # SELECT ... FOR UPDATE: start/end gibi durum geçişi yapan işlemler
+        # bu satırı kilitler. Aksi halde aynı session için eşzamanlı gelen
+        # iki start (ya da iki end) isteği, ikisi de eski status'u okuyup
+        # ikisi de geçişi geçerli sanabilir (race condition). İkinci
+        # transaction, birincisi commit/rollback edene kadar burada
+        # bekler ve güncel status'u okur.
+        statement = (
+            select(SessionModel)
+            .where(SessionModel.id == session_id)
+            .with_for_update()
+        )
+        return self.db_session.execute(statement).scalar_one_or_none()
 
     def start(self, session: SessionModel, *, started_at: datetime) -> SessionModel:
         session.status = SessionStatus.ACTIVE
