@@ -76,7 +76,8 @@ export function MeetingScreen() {
     if (
       !ENABLE_PARTICIPANT_DISCONNECT ||
       disconnectingParticipantId !== null ||
-      !session
+      !session ||
+      session.status !== "active"
     ) {
       return;
     }
@@ -146,6 +147,15 @@ export function MeetingScreen() {
     try {
       const updatedSession = await endSession(session.sessionId);
       setSession(updatedSession);
+
+      participants.forEach(({ participant }) => {
+        if (participant.status !== "disconnected") {
+          setParticipantDisconnected(
+            participant.participantId,
+            updatedSession.endedAt,
+          );
+        }
+      });
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -539,7 +549,7 @@ export function MeetingScreen() {
                             </div>
                           )}
 
-                          {status === "suspicious" && (
+                          {status === "suspicious" && session?.status === "active" && (
                             <>
                               <button
                                 type="button"
