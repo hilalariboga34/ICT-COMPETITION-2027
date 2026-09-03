@@ -12,7 +12,6 @@ export type AnalysisConnectionState =
 interface AnalysisStoreState {
   session: Session | null;
   participants: ParticipantViewModel[];
-  removedParticipants: ParticipantViewModel[];
   isLoading: boolean;
   connectionState: AnalysisConnectionState;
   error: string | null;
@@ -28,7 +27,6 @@ interface AnalysisStoreState {
     participantId: string,
     leftAt?: string | null,
   ) => void;
-  removeParticipantForDemo: (participantId: string) => void;
   setLoading: (isLoading: boolean) => void;
   setConnectionState: (connectionState: AnalysisConnectionState) => void;
   setError: (error: string | null) => void;
@@ -52,7 +50,6 @@ function isIncomingAnalysisNewer(
 export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
   session: null,
   participants: [],
-  removedParticipants: [],
   isLoading: false,
   connectionState: "idle",
   error: null,
@@ -79,6 +76,11 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
       if (participantIndex === -1) return state;
 
       const currentParticipant = state.participants[participantIndex];
+
+      if (currentParticipant.participant.status === "disconnected") {
+        return state;
+      }
+
       if (
         currentParticipant.latestAnalysis &&
         !isIncomingAnalysisNewer(
@@ -120,34 +122,6 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
       ),
     })),
 
-  removeParticipantForDemo: (participantId) =>
-    set((state) => {
-      const participantIndex = state.participants.findIndex(
-        ({ participant }) => participant.participantId === participantId,
-      );
-
-      if (
-        participantIndex === -1 ||
-        state.removedParticipants.some(
-          ({ participant }) => participant.participantId === participantId,
-        )
-      ) {
-        return state;
-      }
-
-      const removedParticipant = state.participants[participantIndex];
-
-      return {
-        participants: state.participants.filter(
-          ({ participant }) => participant.participantId !== participantId,
-        ),
-        removedParticipants: [
-          ...state.removedParticipants,
-          removedParticipant,
-        ],
-      };
-    }),
-
   setLoading: (isLoading) => set({ isLoading }),
 
   setConnectionState: (connectionState) => set({ connectionState }),
@@ -158,7 +132,6 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
     set({
       session: null,
       participants: [],
-      removedParticipants: [],
       isLoading: false,
       connectionState: "idle",
       error: null,

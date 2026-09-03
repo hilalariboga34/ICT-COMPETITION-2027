@@ -5,6 +5,7 @@ interface ImportMetaEnv {
   readonly VITE_WS_BASE_URL?: string;
   readonly VITE_DEMO_SESSION_ID?: string;
   readonly VITE_USE_MOCK_PARTICIPANTS?: string;
+  readonly VITE_ENABLE_PARTICIPANT_DISCONNECT?: string;
 }
 
 interface ImportMeta {

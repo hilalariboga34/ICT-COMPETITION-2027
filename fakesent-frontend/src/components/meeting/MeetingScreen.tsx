@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useAnalysisStore } from "../../stores/useAnalysisStore";
 import { useSessionAnalysis } from "../../hooks/useSessionAnalysis";
+import { disconnectParticipant } from "../../services/analysisApi";
 import type { ParticipantStatus } from "../../types/backend";
 import type { ParticipantViewModel } from "../../types/viewModels";
 import { APP_CONFIG } from "../../constants/appConfig";
-import { USE_MOCK_PARTICIPANTS } from "../../constants/env";
+import { ENABLE_PARTICIPANT_DISCONNECT } from "../../constants/env";
 import { theme } from "../../constants/theme";
 
 const STATUS_LABELS: Record<ParticipantStatus, string> = {
@@ -35,22 +36,20 @@ function getScorePercentage(viewModel: ParticipantViewModel): number | null {
 
 export function MeetingScreen() {
   useSessionAnalysis();
-  const [isRemovedSectionOpen, setIsRemovedSectionOpen] = useState(false);
+
   const [isDisconnectedSectionOpen, setIsDisconnectedSectionOpen] =
     useState(false);
-  const [removingParticipantId, setRemovingParticipantId] = useState<
-    string | null
-  >(null);
-  const removalTimeoutRef = useRef<number | null>(null);
+  const [disconnectingParticipantId, setDisconnectingParticipantId] =
+    useState<string | null>(null);
 
   const {
     session,
     participants,
-    removedParticipants,
     isLoading,
     connectionState,
     error,
-    removeParticipantForDemo,
+    setParticipantDisconnected,
+    setError,
   } = useAnalysisStore();
 
   const disconnectedParticipants = participants.filter(
@@ -64,29 +63,36 @@ export function MeetingScreen() {
     status: ParticipantStatus;
     title: string;
   }> = [
-    { status: "suspicious", title: "RİSKLİ KATILIMCILAR" },
-    { status: "analyzing", title: "ANALİZ EDİLEN KATILIMCILAR" },
-    { status: "authentic", title: "GERÇEK KATILIMCILAR" },
-  ];
+      { status: "suspicious", title: "RİSKLİ KATILIMCILAR" },
+      { status: "analyzing", title: "ANALİZ EDİLEN KATILIMCILAR" },
+      { status: "authentic", title: "GERÇEK KATILIMCILAR" },
+    ];
 
-  useEffect(
-    () => () => {
-      if (removalTimeoutRef.current !== null) {
-        window.clearTimeout(removalTimeoutRef.current);
-      }
-    },
-    [],
-  );
+  const handleDisconnectParticipant = async (participantId: string) => {
+    if (
+      !ENABLE_PARTICIPANT_DISCONNECT ||
+      disconnectingParticipantId !== null ||
+      !session
+    ) {
+      return;
+    }
 
-  const handleRemoveParticipant = (participantId: string) => {
-    if (!USE_MOCK_PARTICIPANTS || removingParticipantId !== null) return;
+    setDisconnectingParticipantId(participantId);
+    setError(null);
 
-    setRemovingParticipantId(participantId);
-    removalTimeoutRef.current = window.setTimeout(() => {
-      removeParticipantForDemo(participantId);
-      setRemovingParticipantId(null);
-      removalTimeoutRef.current = null;
-    }, 300);
+    try {
+      await disconnectParticipant(session.sessionId, participantId);
+
+      setParticipantDisconnected(participantId);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Katılımcının analizi sonlandırılamadı.",
+      );
+    } finally {
+      setDisconnectingParticipantId(null);
+    }
   };
 
   return (
@@ -231,8 +237,6 @@ export function MeetingScreen() {
               const { participant } = viewModel;
               const percentage = getScorePercentage(viewModel);
               const statusColor = getStatusColor(participant.status);
-              const isRemoving =
-                removingParticipantId === participant.participantId;
 
               return (
                 <article
@@ -247,13 +251,7 @@ export function MeetingScreen() {
                     alignItems: "center",
                     justifyContent: "center",
                     overflow: "hidden",
-                    opacity: isRemoving ? 0 : 1,
-                    transform: isRemoving
-                      ? "translateY(6px) scale(0.96)"
-                      : "translateY(0) scale(1)",
-                    pointerEvents: isRemoving ? "none" : "auto",
-                    transition:
-                      "opacity 300ms ease, transform 300ms ease, border-color 0.3s ease",
+                    transition: "border-color 0.3s ease",
                   }}
                 >
                   <span style={{ color: theme.colors.textSecondaryLight }}>
@@ -406,9 +404,12 @@ export function MeetingScreen() {
                     {group.map((viewModel) => {
                       const { participant } = viewModel;
                       const percentage = getScorePercentage(viewModel);
-                      const isRemovalDisabled =
-                        !USE_MOCK_PARTICIPANTS ||
-                        removingParticipantId !== null;
+                      const isDisconnecting =
+                        disconnectingParticipantId === participant.participantId;
+
+                      const isDisconnectDisabled =
+                        !ENABLE_PARTICIPANT_DISCONNECT ||
+                        disconnectingParticipantId !== null;
 
                       return (
                         <div
@@ -480,48 +481,48 @@ export function MeetingScreen() {
                             <>
                               <button
                                 type="button"
-                                disabled={isRemovalDisabled}
+                                disabled={isDisconnectDisabled}
                                 onClick={() =>
-                                  handleRemoveParticipant(
+                                  handleDisconnectParticipant(
                                     participant.participantId,
                                   )
                                 }
                                 title={
-                                  !USE_MOCK_PARTICIPANTS
-                                    ? "Backend katılımcı bağlantısını kesme desteği henüz mevcut değil"
-                                    : removingParticipantId !== null
-                                      ? "Katılımcı toplantıdan çıkarılıyor"
-                                      : "Katılımcıyı demo toplantısından çıkar"
+                                  !ENABLE_PARTICIPANT_DISCONNECT
+                                    ? "Backend analiz sonlandırma desteği henüz mevcut değil"
+                                    : isDisconnecting
+                                      ? "Analiz sonlandırılıyor"
+                                      : "Bu katılımcının analizini sonlandır"
                                 }
                                 style={{
                                   padding: "8px",
-                                  background: !isRemovalDisabled
+                                  background: !isDisconnectDisabled
                                     ? theme.colors.suspicious
                                     : theme.colors.progressTrackLight,
-                                  color: !isRemovalDisabled
+                                  color: !isDisconnectDisabled
                                     ? theme.colors.textLight
                                     : theme.colors.disconnected,
                                   border: "none",
                                   borderRadius: "4px",
                                   fontSize: "0.75rem",
                                   fontWeight: "bold",
-                                  cursor: !isRemovalDisabled
+                                  cursor: !isDisconnectDisabled
                                     ? "pointer"
                                     : "not-allowed",
-                                  opacity: !isRemovalDisabled ? 1 : 0.7,
+                                  opacity: !isDisconnectDisabled ? 1 : 0.7,
                                 }}
                               >
-                                Toplantıdan Çıkar
+                                {isDisconnecting ? "Analiz Sonlandırılıyor…" : "Analizden Çıkar"}
                               </button>
-                              {!USE_MOCK_PARTICIPANTS && (
+
+                              {!ENABLE_PARTICIPANT_DISCONNECT && (
                                 <span
                                   style={{
                                     color: theme.colors.disconnected,
                                     fontSize: "0.7rem",
                                   }}
                                 >
-                                  Backend bağlantı kesme desteği henüz mevcut
-                                  değil.
+                                  Backend analiz sonlandırma desteği henüz mevcut değil.
                                 </span>
                               )}
                             </>
@@ -534,145 +535,98 @@ export function MeetingScreen() {
               );
             })}
             <div style={{ marginTop: "auto", paddingTop: "4px" }}>
-            {disconnectedParticipants.length > 0 && (
-              <section
-                style={{
-                  marginBottom:
-                    removedParticipants.length > 0 ? "6px" : "0",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() =>
-                    setIsDisconnectedSectionOpen((isOpen) => !isOpen)
-                  }
-                  aria-expanded={isDisconnectedSectionOpen}
-                  style={{
-                    width: "100%",
-                    padding: "8px 0",
-                    background: "transparent",
-                    border: "none",
-                    boxShadow: "none",
-                    color: theme.colors.disconnected,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    fontSize: "0.75rem",
-                    fontWeight: "bold",
-                    textAlign: "left",
-                    cursor: "pointer",
-                  }}
-                >
-                  <span aria-hidden="true">
-                    {isDisconnectedSectionOpen ? "▾" : "▸"}
-                  </span>
-                  <span>
-                    BAĞLANTISI KESİLENLER ({disconnectedParticipants.length})
-                  </span>
-                </button>
-
-                {isDisconnectedSectionOpen && (
-                  <div
+              {disconnectedParticipants.length > 0 && (
+                <section style={{ marginBottom: "0" }}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setIsDisconnectedSectionOpen((isOpen) => !isOpen)
+                    }
+                    aria-expanded={isDisconnectedSectionOpen}
                     style={{
+                      width: "100%",
+                      padding: "8px 0",
+                      background: "transparent",
+                      border: "none",
+                      boxShadow: "none",
+                      color: theme.colors.disconnected,
                       display: "flex",
-                      flexDirection: "column",
+                      alignItems: "center",
                       gap: "6px",
-                      marginTop: "6px",
+                      fontSize: "0.75rem",
+                      fontWeight: "bold",
+                      textAlign: "left",
+                      cursor: "pointer",
                     }}
                   >
-                    {disconnectedParticipants.map((viewModel) => {
-                      const percentage = getScorePercentage(viewModel);
+                    <span aria-hidden="true">
+                      {isDisconnectedSectionOpen ? "▾" : "▸"}
+                    </span>
+                    <span>
+                      BAĞLANTISI KESİLENLER ({disconnectedParticipants.length})
+                    </span>
+                  </button>
 
-                      return (
-                        <div
-                          key={viewModel.participant.participantId}
-                          style={{
-                            padding: "8px 10px",
-                            borderRadius: "6px",
-                            background: theme.colors.sidebarCardBackground,
-                            border: `1px solid ${theme.colors.borderLight}`,
-                            color: theme.colors.textSecondaryDark,
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: "10px",
-                          }}
-                        >
-                          <span>{viewModel.participant.displayName}</span>
-                          {percentage !== null && <span>{percentage}%</span>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-            )}
+                  {isDisconnectedSectionOpen && (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "6px",
+                        marginTop: "6px",
+                      }}
+                    >
+                      {disconnectedParticipants.map((viewModel) => {
+                        const percentage = getScorePercentage(viewModel);
 
-            {removedParticipants.length > 0 && (
-              <section style={{ marginBottom: "0" }}>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setIsRemovedSectionOpen((isOpen) => !isOpen)
-                  }
-                  aria-expanded={isRemovedSectionOpen}
-                  style={{
-                    width: "100%",
-                    padding: "8px 0",
-                    background: "transparent",
-                    border: "none",
-                    boxShadow: "none",
-                    color: theme.colors.disconnected,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    fontSize: "0.75rem",
-                    fontWeight: "bold",
-                    textAlign: "left",
-                    cursor: "pointer",
-                  }}
-                >
-                  <span aria-hidden="true">
-                    {isRemovedSectionOpen ? "▾" : "▸"}
-                  </span>
-                  <span>
-                    TOPLANTIDAN ÇIKARILANLAR ({removedParticipants.length})
-                  </span>
-                </button>
+                        return (
+                          <div
+                            key={viewModel.participant.participantId}
+                            style={{
+                              padding: "8px 10px",
+                              borderRadius: "6px",
+                              background: theme.colors.sidebarCardBackground,
+                              border: `1px solid ${theme.colors.borderLight}`,
+                              color: theme.colors.textSecondaryDark,
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: "10px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "2px",
+                              }}
+                            >
+                              <span>{viewModel.participant.displayName}</span>
 
-                {isRemovedSectionOpen && (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "6px",
-                      marginTop: "6px",
-                    }}
-                  >
-                    {removedParticipants.map((viewModel) => {
-                      const percentage = getScorePercentage(viewModel);
+                              {viewModel.participant.leftAt && (
+                                <span
+                                  style={{
+                                    fontSize: "0.7rem",
+                                    color: theme.colors.disconnected,
+                                  }}
+                                >
+                                  Ayrılma:{" "}
+                                  {new Date(viewModel.participant.leftAt).toLocaleTimeString("tr-TR", {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </span>
+                              )}
+                            </div>
 
-                      return (
-                        <div
-                          key={viewModel.participant.participantId}
-                          style={{
-                            padding: "8px 10px",
-                            borderRadius: "6px",
-                            background: theme.colors.sidebarCardBackground,
-                            color: theme.colors.textSecondaryDark,
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: "10px",
-                          }}
-                        >
-                          <span>{viewModel.participant.displayName}</span>
-                          {percentage !== null && <span>{percentage}%</span>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-            )}
+                            {percentage !== null && <span>{percentage}%</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              )}
+
             </div>
           </div>
 

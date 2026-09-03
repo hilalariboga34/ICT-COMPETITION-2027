@@ -22,3 +22,23 @@ export async function evaluateAnalysis(
 
   return (await response.json()) as AnalysisResult;
 }
+
+export async function disconnectParticipant(
+  sessionId: string,
+  participantId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/sessions/${sessionId}/participants/${participantId}/disconnect`,
+    {
+      method: "POST",
+      signal,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Participant disconnect failed with HTTP status ${response.status}`,
+    );
+  }
+}

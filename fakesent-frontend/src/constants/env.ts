@@ -2,5 +2,9 @@
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 export const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL ?? "";
 export const DEMO_SESSION_ID = import.meta.env.VITE_DEMO_SESSION_ID ?? "";
+
 export const USE_MOCK_PARTICIPANTS =
   import.meta.env.VITE_USE_MOCK_PARTICIPANTS === "true";
+
+export const ENABLE_PARTICIPANT_DISCONNECT =
+  import.meta.env.VITE_ENABLE_PARTICIPANT_DISCONNECT === "true";
