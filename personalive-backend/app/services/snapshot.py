@@ -11,11 +11,7 @@ from app.repositories.session import SessionRepository
 from app.schemas.analysis import AnalysisResult as AnalysisResultResponse
 from app.schemas.snapshot import SessionSnapshotParticipant, SessionSnapshotResponse
 from app.services.participants import to_participant_response
-from app.services.sessions import to_session_response
-
-
-class SessionNotFoundError(Exception):
-    """İstenen session_id veritabanında yok."""
+from app.services.sessions import SessionNotFoundError, to_session_response
 
 
 def to_analysis_result_response(result: AnalysisResultModel) -> AnalysisResultResponse:

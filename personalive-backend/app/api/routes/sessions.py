@@ -12,7 +12,6 @@ from app.services.sessions import (
     SessionService,
 )
 from app.services.snapshot import SnapshotService
-from app.services.snapshot import SessionNotFoundError as SnapshotSessionNotFoundError
 
 
 router = APIRouter(prefix="/api/v1/sessions", tags=["sessions"])
@@ -83,7 +82,7 @@ def get_session_snapshot(
 ) -> SessionSnapshotResponse:
     try:
         return SnapshotService(db_session).get_snapshot(session_id)
-    except SnapshotSessionNotFoundError as exc:
+    except SessionNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
         ) from exc
