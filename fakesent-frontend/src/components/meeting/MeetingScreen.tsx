@@ -549,56 +549,57 @@ export function MeetingScreen() {
                             </div>
                           )}
 
-                          {status === "suspicious" && session?.status === "active" && (
-                            <>
-                              <button
-                                type="button"
-                                disabled={isDisconnectDisabled}
-                                onClick={() =>
-                                  handleDisconnectParticipant(
-                                    participant.participantId,
-                                  )
-                                }
-                                title={
-                                  !ENABLE_PARTICIPANT_DISCONNECT
-                                    ? "Backend analiz sonlandırma desteği henüz mevcut değil"
-                                    : isDisconnecting
-                                      ? "Analiz sonlandırılıyor"
-                                      : "Bu katılımcının analizini sonlandır"
-                                }
-                                style={{
-                                  padding: "8px",
-                                  background: !isDisconnectDisabled
-                                    ? theme.colors.suspicious
-                                    : theme.colors.progressTrackLight,
-                                  color: !isDisconnectDisabled
-                                    ? theme.colors.textLight
-                                    : theme.colors.disconnected,
-                                  border: "none",
-                                  borderRadius: "4px",
-                                  fontSize: "0.75rem",
-                                  fontWeight: "bold",
-                                  cursor: !isDisconnectDisabled
-                                    ? "pointer"
-                                    : "not-allowed",
-                                  opacity: !isDisconnectDisabled ? 1 : 0.7,
-                                }}
-                              >
-                                {isDisconnecting ? "Analiz Sonlandırılıyor…" : "Analizden Çıkar"}
-                              </button>
-
-                              {!ENABLE_PARTICIPANT_DISCONNECT && (
-                                <span
+                          {status === "suspicious" &&
+                            session?.status === "active" && (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={isDisconnectDisabled}
+                                  onClick={() =>
+                                    handleDisconnectParticipant(
+                                      participant.participantId,
+                                    )
+                                  }
+                                  title={
+                                    !ENABLE_PARTICIPANT_DISCONNECT
+                                      ? "Backend analiz sonlandırma desteği henüz mevcut değil"
+                                      : isDisconnecting
+                                        ? "Analiz sonlandırılıyor"
+                                        : "Bu katılımcının analizini sonlandır"
+                                  }
                                   style={{
-                                    color: theme.colors.disconnected,
-                                    fontSize: "0.7rem",
+                                    padding: "8px",
+                                    background: !isDisconnectDisabled
+                                      ? theme.colors.suspicious
+                                      : theme.colors.progressTrackLight,
+                                    color: !isDisconnectDisabled
+                                      ? theme.colors.textLight
+                                      : theme.colors.disconnected,
+                                    border: "none",
+                                    borderRadius: "4px",
+                                    fontSize: "0.75rem",
+                                    fontWeight: "bold",
+                                    cursor: !isDisconnectDisabled
+                                      ? "pointer"
+                                      : "not-allowed",
+                                    opacity: !isDisconnectDisabled ? 1 : 0.7,
                                   }}
                                 >
-                                  Backend analiz sonlandırma desteği henüz mevcut değil.
-                                </span>
-                              )}
-                            </>
-                          )}
+                                  {isDisconnecting ? "Analiz Sonlandırılıyor…" : "Analizden Çıkar"}
+                                </button>
+
+                                {!ENABLE_PARTICIPANT_DISCONNECT && (
+                                  <span
+                                    style={{
+                                      color: theme.colors.disconnected,
+                                      fontSize: "0.7rem",
+                                    }}
+                                  >
+                                    Backend analiz sonlandırma desteği henüz mevcut değil.
+                                  </span>
+                                )}
+                              </>
+                            )}
                         </div>
                       );
                     })}
