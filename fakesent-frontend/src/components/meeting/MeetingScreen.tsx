@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAnalysisStore } from "../../stores/useAnalysisStore";
 import { useSessionAnalysis } from "../../hooks/useSessionAnalysis";
-import { disconnectParticipant } from "../../services/analysisApi";
+import { disconnectParticipant } from "../../services/participantApi";
 import type { ParticipantStatus } from "../../types/backend";
 import type { ParticipantViewModel } from "../../types/viewModels";
 import { APP_CONFIG } from "../../constants/appConfig";
@@ -81,9 +81,15 @@ export function MeetingScreen() {
     setError(null);
 
     try {
-      await disconnectParticipant(session.sessionId, participantId);
+      const disconnectedParticipant = await disconnectParticipant(
+        session.sessionId,
+        participantId,
+      );
 
-      setParticipantDisconnected(participantId);
+      setParticipantDisconnected(
+        disconnectedParticipant.participantId,
+        disconnectedParticipant.leftAt,
+      );
     } catch (requestError) {
       setError(
         requestError instanceof Error
