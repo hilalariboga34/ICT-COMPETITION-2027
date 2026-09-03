@@ -68,7 +68,11 @@ def valid_request_body() -> dict[str, object]:
 
 
 def persisted_results(db_session: DBSession) -> list[AnalysisResultModel]:
-    return list(db_session.execute(select(AnalysisResultModel)).scalars().all())
+    statement = select(AnalysisResultModel).where(
+        AnalysisResultModel.session_id == SESSION_ID,
+        AnalysisResultModel.participant_id == PARTICIPANT_ID,
+    )
+    return list(db_session.execute(statement).scalars().all())
 
 
 def test_evaluate_returns_http_200_for_valid_body(
@@ -280,6 +284,9 @@ def test_evaluate_stale_or_duplicate_timestamp_returns_409_without_changes(
     participant.status = ParticipantStatus.SUSPICIOUS
     db_session.add(existing_result)
     db_session.commit()
+    model_version_count_before = db_session.execute(
+        select(func.count()).select_from(ModelVersion)
+    ).scalar_one()
     broadcast = AsyncMock()
     monkeypatch.setattr(
         analysis_route.connection_manager, "broadcast_analysis", broadcast
@@ -294,10 +301,10 @@ def test_evaluate_stale_or_duplicate_timestamp_returns_409_without_changes(
     db_session.refresh(participant)
     assert participant.status == ParticipantStatus.SUSPICIOUS
     assert participant.left_at is None
-    assert (
-        db_session.execute(select(func.count()).select_from(ModelVersion)).scalar_one()
-        == 1
-    )
+    model_version_count_after = db_session.execute(
+        select(func.count()).select_from(ModelVersion)
+    ).scalar_one()
+    assert model_version_count_after == model_version_count_before
     broadcast.assert_not_awaited()
 
 
