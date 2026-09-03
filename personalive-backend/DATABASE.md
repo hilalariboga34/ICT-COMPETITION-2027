@@ -6,10 +6,12 @@
 - 8 tablo var: 3'ü AI eğitim veri seti metadata'sı (`manipulation_methods`, `dataset_videos`,
   `face_samples` — korunuyor, dokunulmadı), 5'i uygulamanın çalışma zamanı (runtime) verisi
   (`sessions`, `participants`, `analysis_results`, `model_versions`, `session_events`).
-- API route'ları (`app/api/routes/analysis.py`, `websocket.py`) **henüz bu tabloları kullanmıyor**
-  — hâlâ tamamen bellekte (in-memory) çalışıyor. Route'ları veritabanına bağlamak ayrı, sonraki bir adım.
-- Ham video/kare/görüntü/base64/binary veri hiçbir tabloda tutulmuyor — sadece kimlik, zaman,
-  skor, durum ve model versiyonu gibi metadata.
+- Session ve participant REST route'ları PostgreSQL persistence kullanıyor. Analysis route'u
+  `analysis_results` ve `model_versions` tablolarına yazıyor ve participant status değerini güncelliyor.
+- Analysis transaction'ı commit edildikten sonra `analysis.updated` WebSocket eventi yayımlanıyor.
+  WebSocket bağlantı listesi local demo için process belleğinde (in-memory) tutuluyor.
+- Mevcut runtime tablolarında ham video/kare/görüntü/base64/binary kolonu yok; analysis akışı
+  kimlik, zaman, skor, durum ve model versiyonu gibi metadata saklıyor.
 
 ## Local kurulum
 
@@ -211,20 +213,27 @@ geçtiğini gösteriyor, sadece "DATABASE_URL yok, skip edildi" anlamına gelmiy
 - `analysis_results.(participant_id, session_id)`, composite bir foreign key ile
   `participants.(id, session_id)`'ye referans veriyor — yani Session A'ya, Session B'deki bir
   participant ile analiz kaydı eklenemiyor, bunu DB seviyesinde garanti ediyoruz.
+- Analysis servisi participant satırını `SELECT ... FOR UPDATE` ile kilitler ve aynı participant'ın
+  en son analysis timestamp değerini kontrol eder. Son timestamp'e eşit veya daha eski istekler
+  reddedilir; böylece eşzamanlı isteklerde timestamp kontrolü ile insert aynı participant için
+  sıralanır.
+- `analysis_results` insert'i ile participant status değerinin `authentic`/`suspicious` olarak
+  güncellenmesi aynı transaction içindedir. Hata durumunda rollback yapılır; `analysis.updated`
+  WebSocket broadcast yalnızca başarılı commit sonrasında route katmanında gerçekleşir.
 - `dataset_videos.label` ve `face_samples.label`: sadece `0`, `1` ya da `NULL` olabilir.
 - `face_samples.frame_reference` ve `face_samples.face_order`: negatif olamaz (`>= 0`).
 
-## Aldığım kararlar / netleşmemiş noktalar (varsayım olarak işaretlendi)
+## Tasarım kararları / netleşmemiş noktalar (varsayım olarak işaretlendi)
 
 - **UUID vs Integer:** `sessions`, `participants`, `analysis_results` tablolarında ID tipi
   UUID (Integer değil) — `app/schemas/*.py` içindeki Pydantic şemalarında `sessionId`,
-  `participantId` zaten UUID olduğu için, ileride API↔DB bağlanınca ekstra dönüşüm gerekmesin
-  diye. `model_versions`, `manipulation_methods` gibi "lookup" tablolarda ise Integer PK
+  `participantId` zaten UUID olduğu için API↔DB arasında ekstra dönüşüm gerekmiyor.
+  `model_versions`, `manipulation_methods` gibi "lookup" tablolarda ise Integer PK
   korundu (mevcut desenle tutarlı olsun diye).
-- **model_versions çözümlemesi:** API'den gelen `modelVersion` alanı düz bir metin
-  ("analysis-v1"). Bu tabloya karşılık getirip id'siyle bağlamak (manipulation_methods'taki
-  seed deseni gibi bir "yoksa ekle" mantığı) gerekecek — henüz böyle bir yardımcı fonksiyon
-  yazılmadı, bu API↔DB entegrasyonu sırasında eklenmeli.
+- **model_versions çözümlemesi:** API'den gelen `modelVersion` düz metni (ör. "analysis-v1"),
+  `model_versions.name` üzerinden atomik PostgreSQL `INSERT ... ON CONFLICT DO NOTHING`
+  yaklaşımıyla çözülür. Aynı isimdeki satır tekrar kullanılır, yoksa oluşturulur ve
+  `analysis_results.model_version_id` bu kayda bağlanır.
 - **session_events tasarımı — TASLAK:** Kodda şu an tek bir event tipi var
   (`analysis.updated`, bkz. `app/schemas/events.py`). Tablo, ileride başka event tipleri de
   gelebilir diye `event_type` (serbest metin) + `payload` (JSONB) olarak genel tasarlandı.

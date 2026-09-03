@@ -1,13 +1,14 @@
 # PersonaLive Backend
 
-PersonaLive Backend, FastAPI tabanlı bir analiz API'sidir (Application Programming Interface). Harici bir AI modelinden gelmesi beklenen analiz çıktısını Pydantic ile doğrular, `fakeProbability` değerinden `realityScore` üretir ve sonucu aynı oturuma (session) bağlı WebSocket istemcilerine anlık olarak yayınlar.
+PersonaLive Backend, FastAPI tabanlı bir analiz API'sidir (Application Programming Interface). Harici bir AI modelinden gelmesi beklenen analiz çıktısını Pydantic ile doğrular, `fakeProbability` değerinden `realityScore` üretir, sonucu PostgreSQL'e kaydeder ve başarılı commit sonrasında aynı oturuma (session) bağlı WebSocket istemcilerine anlık olarak yayınlar.
 
-Backend ham video, video karesi (frame) veya görüntü saklamaz. Mevcut sürüm yalnızca analiz metadata'sı üzerinde çalışır ve gerçek AI çıkarımı (inference) gerçekleştirmez.
+Mevcut analysis HTTP contract'ında ve runtime veritabanı modellerinde ham video, video karesi (frame) veya görüntü alanı yoktur. Bu akış analiz metadata'sı üzerinde çalışır ve backend gerçek AI çıkarımı (inference) gerçekleştirmez.
 
 ## Mevcut özellikler
 
 - `GET /health`: Servisin çalıştığını ve uygulama sürümünü bildirir.
-- `POST /api/v1/analysis/evaluate`: Analiz girdisini doğrular ve bir analiz sonucu üretir.
+- `POST /api/v1/analysis/evaluate`: Analiz girdisini doğrular, sonucu PostgreSQL'e kaydeder ve participant status değerini günceller.
+- Session oluşturma/getirme ve participant oluşturma/listeleme/disconnect REST endpoint'leri.
 - `WebSocket /api/v1/ws/sessions/{session_id}`: Analiz sonuçlarını aynı session kanalındaki istemcilere yayınlar.
 - Pydantic v2 veri doğrulaması (validation) ve ekstra alanların reddedilmesi.
 - Environment ayarıyla değiştirilebilen gerçeklik eşiği (`AUTHENTIC_THRESHOLD`).
@@ -17,7 +18,7 @@ Backend ham video, video karesi (frame) veya görüntü saklamaz. Mevcut sürüm
 - Session ve participant için Pydantic veri sözleşmeleri.
 - PostgreSQL şeması: SQLAlchemy 2 modelleri + Alembic migration'ları (bkz. [`DATABASE.md`](./DATABASE.md)). 8 tablo: AI eğitim veri seti metadata'sı (3) + uygulama runtime verisi (5: sessions, participants, analysis_results, model_versions, session_events).
 
-**Önemli:** Yukarıdaki şema henüz REST/WebSocket route'larına BAĞLANMADI — `POST /api/v1/analysis/evaluate` hâlâ tamamen bellekte (in-memory) çalışıyor, hiçbir şeyi veritabanına yazmıyor. Route'ları veritabanına bağlamak (persist etme) ayrı, sonraki bir adım.
+**Önemli:** Session ve participant route'ları PostgreSQL persistence kullanır. Analysis endpoint'i `analysis_results` kaydını ve participant status güncellemesini aynı transaction içinde yapar; WebSocket broadcast yalnızca başarılı commit sonrasında gerçekleşir. WebSocket bağlantı listesi ise local demo için process belleğinde (in-memory) tutulur.
 
 ## Teknolojiler
 
@@ -30,13 +31,9 @@ Mevcut teknolojiler:
 - Uvicorn
 - Pytest
 - WebSocket
-- PostgreSQL (şema hazır, route entegrasyonu henüz yok)
+- PostgreSQL
 - SQLAlchemy 2
 - Alembic veritabanı migrasyonları (database migrations)
-
-Planlanan entegrasyonlar:
-
-- Yukarıdaki veritabanı şemasının REST/WebSocket route'larına bağlanması
 
 ## Proje yapısı
 
@@ -158,6 +155,8 @@ Bu örnekte `fakeProbability` değeri `0.25` olduğu için `realityScore` değer
 
 Eşik `.env` içindeki `AUTHENTIC_THRESHOLD` ayarıyla değiştirilebilir.
 
+Bu endpoint için session ve participant önceden veritabanında bulunmalı, participant ilgili session'a ait olmalı ve status değeri `disconnected` olmamalıdır. Başarılı istekte AnalysisResult PostgreSQL'e kaydedilir ve participant status değeri `authentic` veya `suspicious` olarak güncellenir.
+
 ## WebSocket kullanımı
 
 Bir session kanalına bağlanmak için aşağıdaki adres kullanılır:
@@ -183,7 +182,7 @@ ws://127.0.0.1:8000/api/v1/ws/sessions/{session_id}
 }
 ```
 
-Yayın yalnızca sonucun `sessionId` değeriyle eşleşen kanala gönderilir. Aynı session kanalına birden fazla WebSocket istemcisi bağlanabilir. Bağlı istemci yoksa analiz endpoint'i normal şekilde HTTP 200 döndürmeye devam eder.
+Yayın yalnızca başarılı veritabanı commit'inden sonra, sonucun `sessionId` değeriyle eşleşen kanala gönderilir. Aynı session kanalına birden fazla WebSocket istemcisi bağlanabilir. Bağlı istemci yoksa analiz endpoint'i normal şekilde HTTP 200 döndürmeye devam eder.
 
 WebSocket bağlantıları yalnızca çalışan uygulama sürecinin belleğinde (in-memory) tutulur. Bu çözüm local demo içindir; production veya birden fazla uygulama instance'ı için Redis Pub/Sub benzeri dağıtık bir mesajlaşma altyapısı gerekir.
 
@@ -200,10 +199,10 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 Frontend'i gerçek AI inference entegrasyonundan bağımsız test etmek için ikinci bir terminalde aynı sanal ortamı etkinleştirip publisher'ı çalıştırın:
 
 ```bash
-python -m scripts.mock_analysis_publisher --session-id 11111111-1111-4111-8111-111111111111
+python -m scripts.mock_analysis_publisher --session-title "Mock Analysis Session"
 ```
 
-Frontend WebSocket istemcisi aynı session ID ile `ws://127.0.0.1:8000/api/v1/ws/sessions/11111111-1111-4111-8111-111111111111` adresine bağlanmalıdır. Publisher düzenli mock analiz girdileri gönderir; backend bunları normal REST ve WebSocket akışından geçirir. Bu araç gerçek AI inference yapmaz, video veya görüntü işlemez ve yalnızca local geliştirme simülasyonu içindir.
+Publisher varsayılan olarak gerçek session endpoint'iyle yeni bir session oluşturur; mevcut bir `--session-id` verilirse önce onu doğrular. Ardından gerçek participant endpoint'inden bağlı participant'ları listeler ve eksik sayıda participant oluşturur. Terminalde yazdırılan session ID ile frontend WebSocket istemcisi `ws://127.0.0.1:8000/api/v1/ws/sessions/{session_id}` adresine bağlanmalıdır. Publisher düzenli mock analiz girdileri gönderir; backend bunları normal REST, PostgreSQL persistence ve WebSocket akışından geçirir. Bu araç gerçek AI inference yapmaz, video veya görüntü işlemez ve yalnızca local geliştirme simülasyonu içindir.
 
 ## Testler
 
@@ -217,16 +216,13 @@ Test sayısı proje geliştikçe artabileceği için burada sabit bir sayı tutu
 
 ## Veri gizliliği
 
-- Ham video, video karesi (frame) veya görüntü veritabanına kaydedilmez.
-- Backend şu anda session ve participant kimlikleri, timestamp, model versiyonu, güven değeri ve analiz skoru gibi metadata alanlarını işler.
-- Veritabanı şeması da aynı prensiple tasarlandı: hiçbir tabloda ham video/kare/görüntü/base64/binary veri yok, sadece kimlik/zaman/skor/durum/model versiyonu metadata'sı (bkz. `DATABASE.md`).
-- Route'lar henüz veritabanına yazmıyor (bkz. yukarıdaki "Önemli" notu) — kalıcı veri katmanı entegrasyonu ayrı bir adım.
+- Mevcut analysis request/response contract'ında ve runtime tablolarında ham video, video karesi (frame), görüntü, base64 veya binary alanı yoktur.
+- Backend bu akışta session ve participant kimlikleri, timestamp, model versiyonu, güven değeri, analiz skoru ve durum gibi metadata alanlarını işler ve saklar.
+- Capture, preprocessing ve AI transport hattının sistem genelindeki veri saklama sınırları henüz kesinleştirilmemiştir.
 - Gerçek kimlik doğrulama (authentication) ve yetkilendirme (authorization) henüz eklenmemiştir.
 
 ## Henüz tamamlanmayanlar
 
-- Veritabanı şemasının REST/WebSocket route'larına bağlanması (şu an route'lar in-memory)
-- Session ve participant REST endpoint'leri
 - Gerçek AI inference entegrasyonu
 - Frontend REST ve WebSocket entegrasyonu
 - Authentication ve authorization
