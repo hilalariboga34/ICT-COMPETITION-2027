@@ -7,6 +7,7 @@ import type { ParticipantViewModel } from "../../types/viewModels";
 import { APP_CONFIG } from "../../constants/appConfig";
 import { ENABLE_PARTICIPANT_DISCONNECT } from "../../constants/env";
 import { theme } from "../../constants/theme";
+import { endSession, startSession } from "../../services/sessionApi";
 
 const STATUS_LABELS: Record<ParticipantStatus, string> = {
   analyzing: "ANALİZ EDİLİYOR",
@@ -41,6 +42,8 @@ export function MeetingScreen() {
     useState(false);
   const [disconnectingParticipantId, setDisconnectingParticipantId] =
     useState<string | null>(null);
+  const [isSessionActionPending, setIsSessionActionPending] =
+    useState(false);
 
   const {
     session,
@@ -48,6 +51,7 @@ export function MeetingScreen() {
     isLoading,
     connectionState,
     error,
+    setSession,
     setParticipantDisconnected,
     setError,
   } = useAnalysisStore();
@@ -98,6 +102,58 @@ export function MeetingScreen() {
       );
     } finally {
       setDisconnectingParticipantId(null);
+    }
+  };
+
+  const handleStartSession = async () => {
+    if (!session || isSessionActionPending || session.status !== "waiting") {
+      return;
+    }
+
+    setIsSessionActionPending(true);
+    setError(null);
+
+    try {
+      const updatedSession = await startSession(session.sessionId);
+      setSession(updatedSession);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Oturum başlatılamadı.",
+      );
+    } finally {
+      setIsSessionActionPending(false);
+    }
+  };
+
+  const handleEndSession = async () => {
+    if (!session || isSessionActionPending || session.status !== "active") {
+      return;
+    }
+
+    const shouldEnd = window.confirm(
+      "Oturumu bitirmek istediğinize emin misiniz?",
+    );
+
+    if (!shouldEnd) {
+      return;
+    }
+
+    setIsSessionActionPending(true);
+    setError(null);
+
+    try {
+      const updatedSession = await endSession(session.sessionId);
+      setSession(updatedSession);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Oturum bitirilemedi.",
+      );
+    } finally {
+      setIsSessionActionPending(false);
     }
   };
 
@@ -645,10 +701,46 @@ export function MeetingScreen() {
               fontSize: "0.8rem",
             }}
           >
-            <div>
-              {session
-                ? `Oturum durumu: ${session.status}`
-                : "Oturum verisi bekleniyor"}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+              }}
+            >
+              <div>
+                {session
+                  ? `Oturum durumu: ${session.status}`
+                  : "Oturum verisi bekleniyor"}
+              </div>
+
+              {session?.status === "waiting" && (
+                <button
+                  type="button"
+                  onClick={handleStartSession}
+                  disabled={isSessionActionPending}
+                >
+                  {isSessionActionPending
+                    ? "Oturum Başlatılıyor..."
+                    : "Oturumu Başlat"}
+                </button>
+              )}
+
+              {session?.status === "active" && (
+                <button
+                  type="button"
+                  onClick={handleEndSession}
+                  disabled={isSessionActionPending}
+                >
+                  {isSessionActionPending
+                    ? "Oturum Bitiriliyor..."
+                    : "Oturumu Bitir"}
+                </button>
+              )}
+
+              {session?.status === "ended" && (
+                <div>Oturum tamamlandı.</div>
+              )}
             </div>
           </div>
         </aside>
