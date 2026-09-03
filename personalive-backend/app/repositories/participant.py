@@ -30,7 +30,11 @@ class ParticipantRepository:
         return list(self.db_session.execute(statement).scalars().all())
 
     def get_by_id_and_session(
-        self, participant_id: UUID, session_id: UUID
+        self,
+        participant_id: UUID,
+        session_id: UUID,
+        *,
+        for_update: bool = False,
     ) -> Participant | None:
         # session_id'yi de filtreye dahil ediyoruz ki başka bir session'a ait
         # bir participant_id, yanlışlıkla bu session'a aitmiş gibi bulunmasın.
@@ -38,7 +42,15 @@ class ParticipantRepository:
             Participant.id == participant_id,
             Participant.session_id == session_id,
         )
+        if for_update:
+            statement = statement.with_for_update()
         return self.db_session.execute(statement).scalar_one_or_none()
+
+    def update_status(
+        self, participant: Participant, status: ParticipantStatus
+    ) -> Participant:
+        participant.status = status
+        return participant
 
     def mark_disconnected(
         self, participant: Participant, *, left_at: datetime
