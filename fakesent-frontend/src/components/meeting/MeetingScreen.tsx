@@ -7,6 +7,7 @@ import type { ParticipantViewModel } from "../../types/viewModels";
 import { APP_CONFIG } from "../../constants/appConfig";
 import { ENABLE_PARTICIPANT_DISCONNECT } from "../../constants/env";
 import { theme } from "../../constants/theme";
+import { endSession, startSession } from "../../services/sessionApi";
 
 const STATUS_LABELS: Record<ParticipantStatus, string> = {
   analyzing: "ANALİZ EDİLİYOR",
@@ -41,6 +42,8 @@ export function MeetingScreen() {
     useState(false);
   const [disconnectingParticipantId, setDisconnectingParticipantId] =
     useState<string | null>(null);
+  const [isSessionActionPending, setIsSessionActionPending] =
+    useState(false);
 
   const {
     session,
@@ -48,6 +51,7 @@ export function MeetingScreen() {
     isLoading,
     connectionState,
     error,
+    setSession,
     setParticipantDisconnected,
     setError,
   } = useAnalysisStore();
@@ -72,7 +76,8 @@ export function MeetingScreen() {
     if (
       !ENABLE_PARTICIPANT_DISCONNECT ||
       disconnectingParticipantId !== null ||
-      !session
+      !session ||
+      session.status !== "active"
     ) {
       return;
     }
@@ -98,6 +103,67 @@ export function MeetingScreen() {
       );
     } finally {
       setDisconnectingParticipantId(null);
+    }
+  };
+
+  const handleStartSession = async () => {
+    if (!session || isSessionActionPending || session.status !== "waiting") {
+      return;
+    }
+
+    setIsSessionActionPending(true);
+    setError(null);
+
+    try {
+      const updatedSession = await startSession(session.sessionId);
+      setSession(updatedSession);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Oturum başlatılamadı.",
+      );
+    } finally {
+      setIsSessionActionPending(false);
+    }
+  };
+
+  const handleEndSession = async () => {
+    if (!session || isSessionActionPending || session.status !== "active") {
+      return;
+    }
+
+    const shouldEnd = window.confirm(
+      "Oturumu bitirmek istediğinize emin misiniz?",
+    );
+
+    if (!shouldEnd) {
+      return;
+    }
+
+    setIsSessionActionPending(true);
+    setError(null);
+
+    try {
+      const updatedSession = await endSession(session.sessionId);
+      setSession(updatedSession);
+
+      participants.forEach(({ participant }) => {
+        if (participant.status !== "disconnected") {
+          setParticipantDisconnected(
+            participant.participantId,
+            updatedSession.endedAt,
+          );
+        }
+      });
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Oturum bitirilemedi.",
+      );
+    } finally {
+      setIsSessionActionPending(false);
     }
   };
 
@@ -483,56 +549,57 @@ export function MeetingScreen() {
                             </div>
                           )}
 
-                          {status === "suspicious" && (
-                            <>
-                              <button
-                                type="button"
-                                disabled={isDisconnectDisabled}
-                                onClick={() =>
-                                  handleDisconnectParticipant(
-                                    participant.participantId,
-                                  )
-                                }
-                                title={
-                                  !ENABLE_PARTICIPANT_DISCONNECT
-                                    ? "Backend analiz sonlandırma desteği henüz mevcut değil"
-                                    : isDisconnecting
-                                      ? "Analiz sonlandırılıyor"
-                                      : "Bu katılımcının analizini sonlandır"
-                                }
-                                style={{
-                                  padding: "8px",
-                                  background: !isDisconnectDisabled
-                                    ? theme.colors.suspicious
-                                    : theme.colors.progressTrackLight,
-                                  color: !isDisconnectDisabled
-                                    ? theme.colors.textLight
-                                    : theme.colors.disconnected,
-                                  border: "none",
-                                  borderRadius: "4px",
-                                  fontSize: "0.75rem",
-                                  fontWeight: "bold",
-                                  cursor: !isDisconnectDisabled
-                                    ? "pointer"
-                                    : "not-allowed",
-                                  opacity: !isDisconnectDisabled ? 1 : 0.7,
-                                }}
-                              >
-                                {isDisconnecting ? "Analiz Sonlandırılıyor…" : "Analizden Çıkar"}
-                              </button>
-
-                              {!ENABLE_PARTICIPANT_DISCONNECT && (
-                                <span
+                          {status === "suspicious" &&
+                            session?.status === "active" && (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={isDisconnectDisabled}
+                                  onClick={() =>
+                                    handleDisconnectParticipant(
+                                      participant.participantId,
+                                    )
+                                  }
+                                  title={
+                                    !ENABLE_PARTICIPANT_DISCONNECT
+                                      ? "Backend analiz sonlandırma desteği henüz mevcut değil"
+                                      : isDisconnecting
+                                        ? "Analiz sonlandırılıyor"
+                                        : "Bu katılımcının analizini sonlandır"
+                                  }
                                   style={{
-                                    color: theme.colors.disconnected,
-                                    fontSize: "0.7rem",
+                                    padding: "8px",
+                                    background: !isDisconnectDisabled
+                                      ? theme.colors.suspicious
+                                      : theme.colors.progressTrackLight,
+                                    color: !isDisconnectDisabled
+                                      ? theme.colors.textLight
+                                      : theme.colors.disconnected,
+                                    border: "none",
+                                    borderRadius: "4px",
+                                    fontSize: "0.75rem",
+                                    fontWeight: "bold",
+                                    cursor: !isDisconnectDisabled
+                                      ? "pointer"
+                                      : "not-allowed",
+                                    opacity: !isDisconnectDisabled ? 1 : 0.7,
                                   }}
                                 >
-                                  Backend analiz sonlandırma desteği henüz mevcut değil.
-                                </span>
-                              )}
-                            </>
-                          )}
+                                  {isDisconnecting ? "Analiz Sonlandırılıyor…" : "Analizden Çıkar"}
+                                </button>
+
+                                {!ENABLE_PARTICIPANT_DISCONNECT && (
+                                  <span
+                                    style={{
+                                      color: theme.colors.disconnected,
+                                      fontSize: "0.7rem",
+                                    }}
+                                  >
+                                    Backend analiz sonlandırma desteği henüz mevcut değil.
+                                  </span>
+                                )}
+                              </>
+                            )}
                         </div>
                       );
                     })}
@@ -645,10 +712,46 @@ export function MeetingScreen() {
               fontSize: "0.8rem",
             }}
           >
-            <div>
-              {session
-                ? `Oturum durumu: ${session.status}`
-                : "Oturum verisi bekleniyor"}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+              }}
+            >
+              <div>
+                {session
+                  ? `Oturum durumu: ${session.status}`
+                  : "Oturum verisi bekleniyor"}
+              </div>
+
+              {session?.status === "waiting" && (
+                <button
+                  type="button"
+                  onClick={handleStartSession}
+                  disabled={isSessionActionPending}
+                >
+                  {isSessionActionPending
+                    ? "Oturum Başlatılıyor..."
+                    : "Oturumu Başlat"}
+                </button>
+              )}
+
+              {session?.status === "active" && (
+                <button
+                  type="button"
+                  onClick={handleEndSession}
+                  disabled={isSessionActionPending}
+                >
+                  {isSessionActionPending
+                    ? "Oturum Bitiriliyor..."
+                    : "Oturumu Bitir"}
+                </button>
+              )}
+
+              {session?.status === "ended" && (
+                <div>Oturum tamamlandı.</div>
+              )}
             </div>
           </div>
         </aside>
