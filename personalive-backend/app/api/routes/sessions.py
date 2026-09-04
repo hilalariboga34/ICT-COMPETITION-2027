@@ -5,11 +5,13 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.db.session import get_db_session
 from app.schemas.session import SessionCreate, SessionResponse
+from app.schemas.snapshot import SessionSnapshotResponse
 from app.services.sessions import (
     InvalidSessionTransitionError,
     SessionNotFoundError,
     SessionService,
 )
+from app.services.snapshot import SnapshotService
 
 
 router = APIRouter(prefix="/api/v1/sessions", tags=["sessions"])
@@ -70,4 +72,17 @@ def end_session(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Session cannot be ended from its current status",
+        ) from exc
+
+
+@router.get("/{session_id}/snapshot", response_model=SessionSnapshotResponse)
+def get_session_snapshot(
+    session_id: UUID,
+    db_session: DBSession = Depends(get_db_session),
+) -> SessionSnapshotResponse:
+    try:
+        return SnapshotService(db_session).get_snapshot(session_id)
+    except SessionNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
         ) from exc
