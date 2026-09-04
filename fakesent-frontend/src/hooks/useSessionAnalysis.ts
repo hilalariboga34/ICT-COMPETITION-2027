@@ -28,7 +28,7 @@ export function useSessionAnalysis(): void {
   useEffect(() => {
     let isActive = true;
     let client: SessionWebSocketClient | null = null;
-    let reconnectAbortController: AbortController | null = null;
+    let connectionSnapshotAbortController: AbortController | null = null;
 
     const initialAbortController = new AbortController();
     const store = useAnalysisStore.getState();
@@ -65,15 +65,15 @@ export function useSessionAnalysis(): void {
       );
     };
 
-    const refreshSnapshotAfterReconnect = async () => {
+    const refreshSnapshotAfterConnection = async () => {
       if (USE_MOCK_PARTICIPANTS || !isActive) {
         return;
       }
 
-      reconnectAbortController?.abort();
-      reconnectAbortController = new AbortController();
+      connectionSnapshotAbortController?.abort();
+      connectionSnapshotAbortController = new AbortController();
 
-      const controller = reconnectAbortController;
+      const controller = connectionSnapshotAbortController;
 
       try {
         const snapshot = await getSessionSnapshot(
@@ -106,11 +106,11 @@ export function useSessionAnalysis(): void {
           .setError(
             error instanceof Error
               ? error.message
-              : "Session snapshot could not be refreshed after reconnect.",
+              : "Session snapshot could not be refreshed after connection.",
           );
       } finally {
-        if (reconnectAbortController === controller) {
-          reconnectAbortController = null;
+        if (connectionSnapshotAbortController === controller) {
+          connectionSnapshotAbortController = null;
         }
       }
     };
@@ -150,10 +150,10 @@ export function useSessionAnalysis(): void {
               .setError(error.message);
           },
 
-          onReconnected: () => {
+          onConnected: () => {
             if (!isActive) return;
 
-            void refreshSnapshotAfterReconnect();
+            void refreshSnapshotAfterConnection();
           },
         });
       } catch (error) {
@@ -181,7 +181,7 @@ export function useSessionAnalysis(): void {
     return () => {
       isActive = false;
       initialAbortController.abort();
-      reconnectAbortController?.abort();
+      connectionSnapshotAbortController?.abort();
       client?.close();
     };
   }, []);
