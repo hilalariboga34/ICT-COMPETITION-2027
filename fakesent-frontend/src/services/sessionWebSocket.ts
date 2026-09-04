@@ -16,6 +16,7 @@ export interface SessionWebSocketOptions {
   onAnalysisUpdated: (result: AnalysisResult) => void;
   onConnectionStateChange?: (state: WebSocketConnectionState) => void;
   onError?: (error: Error) => void;
+  onConnected?: () => void;
   onReconnected?: () => void;
 }
 
@@ -147,6 +148,7 @@ class BrowserSessionWebSocketClient implements SessionWebSocketClient {
       const wasReconnecting = this.reconnectAttempt > 0;
       this.reconnectAttempt = 0;
       this.options.onConnectionStateChange?.("connected");
+      this.options.onConnected?.();
 
       if (wasReconnecting) {
         this.options.onReconnected?.();

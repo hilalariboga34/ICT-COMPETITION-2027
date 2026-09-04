@@ -7,8 +7,7 @@ import {
   MOCK_PARTICIPANTS,
   MOCK_SESSION,
 } from "../mocks/sessionSnapshot";
-import { listParticipants } from "../services/participantApi";
-import { getSession } from "../services/sessionApi";
+import { getSessionSnapshot } from "../services/snapshotApi";
 import {
   createSessionWebSocketClient,
   type SessionWebSocketClient,
@@ -18,7 +17,6 @@ import {
   useAnalysisStore,
   type AnalysisConnectionState,
 } from "../stores/useAnalysisStore";
-import type { ParticipantViewModel } from "../types/viewModels";
 
 function mapConnectionState(
   state: WebSocketConnectionState,
@@ -26,21 +24,13 @@ function mapConnectionState(
   return state === "closed" ? "disconnected" : state;
 }
 
-function mapParticipantsToViewModels(
-  participants: Awaited<ReturnType<typeof listParticipants>>,
-): ParticipantViewModel[] {
-  return participants.map((participant) => ({
-    participant,
-    latestAnalysis: null,
-  }));
-}
-
 export function useSessionAnalysis(): void {
   useEffect(() => {
     let isActive = true;
     let client: SessionWebSocketClient | null = null;
+    let connectionSnapshotAbortController: AbortController | null = null;
 
-    const abortController = new AbortController();
+    const initialAbortController = new AbortController();
     const store = useAnalysisStore.getState();
 
     store.reset();
@@ -56,28 +46,78 @@ export function useSessionAnalysis(): void {
       return;
     }
 
-    const loadSessionAndParticipants = async () => {
+    const loadInitialSnapshot = async () => {
       if (USE_MOCK_PARTICIPANTS) {
         store.setSnapshot(MOCK_SESSION, MOCK_PARTICIPANTS);
         return;
       }
 
-      const [session, participants] = await Promise.all([
-        getSession(DEMO_SESSION_ID, abortController.signal),
-        listParticipants(DEMO_SESSION_ID, abortController.signal),
-      ]);
+      const snapshot = await getSessionSnapshot(
+        DEMO_SESSION_ID,
+        initialAbortController.signal,
+      );
 
       if (!isActive) return;
 
       store.setSnapshot(
-        session,
-        mapParticipantsToViewModels(participants),
+        snapshot.session,
+        snapshot.participants,
       );
+    };
+
+    const refreshSnapshotAfterConnection = async () => {
+      if (USE_MOCK_PARTICIPANTS || !isActive) {
+        return;
+      }
+
+      connectionSnapshotAbortController?.abort();
+      connectionSnapshotAbortController = new AbortController();
+
+      const controller = connectionSnapshotAbortController;
+
+      try {
+        const snapshot = await getSessionSnapshot(
+          DEMO_SESSION_ID,
+          controller.signal,
+        );
+
+        if (!isActive || controller.signal.aborted) {
+          return;
+        }
+
+        useAnalysisStore
+          .getState()
+          .mergeSnapshot(
+            snapshot.session,
+            snapshot.participants,
+          );
+      } catch (error) {
+        if (
+          !isActive ||
+          controller.signal.aborted ||
+          (error instanceof DOMException &&
+            error.name === "AbortError")
+        ) {
+          return;
+        }
+
+        useAnalysisStore
+          .getState()
+          .setError(
+            error instanceof Error
+              ? error.message
+              : "Session snapshot could not be refreshed after connection.",
+          );
+      } finally {
+        if (connectionSnapshotAbortController === controller) {
+          connectionSnapshotAbortController = null;
+        }
+      }
     };
 
     const initialize = async () => {
       try {
-        await loadSessionAndParticipants();
+        await loadInitialSnapshot();
 
         if (!isActive) return;
 
@@ -110,22 +150,28 @@ export function useSessionAnalysis(): void {
               .setError(error.message);
           },
 
-          onReconnected: () => {
+          onConnected: () => {
             if (!isActive) return;
 
-            // Reconnect sonrası session ve participant verilerinin yeniden
-            // senkronizasyonu ayrı entegrasyon görevinde eklenecek.
+            void refreshSnapshotAfterConnection();
           },
         });
       } catch (error) {
-        if (!isActive || abortController.signal.aborted) return;
+        if (
+          !isActive ||
+          initialAbortController.signal.aborted ||
+          (error instanceof DOMException &&
+            error.name === "AbortError")
+        ) {
+          return;
+        }
 
         store.setLoading(false);
         store.setConnectionState("disconnected");
         store.setError(
           error instanceof Error
             ? error.message
-            : "Session and participant data could not be loaded.",
+            : "Session snapshot could not be loaded.",
         );
       }
     };
@@ -134,7 +180,8 @@ export function useSessionAnalysis(): void {
 
     return () => {
       isActive = false;
-      abortController.abort();
+      initialAbortController.abort();
+      connectionSnapshotAbortController?.abort();
       client?.close();
     };
   }, []);
