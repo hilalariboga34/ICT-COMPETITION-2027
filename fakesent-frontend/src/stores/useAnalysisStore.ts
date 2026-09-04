@@ -22,6 +22,10 @@ interface AnalysisStoreState {
     session: Session,
     participants: ParticipantViewModel[],
   ) => void;
+  mergeSnapshot: (
+    session: Session,
+    participants: ParticipantViewModel[],
+  ) => void;
   applyAnalysisResult: (result: AnalysisResult) => void;
   setParticipantDisconnected: (
     participantId: string,
@@ -47,6 +51,28 @@ function isIncomingAnalysisNewer(
   return incomingTimestamp > currentTimestamp;
 }
 
+const SESSION_STATUS_ORDER: Record<Session["status"], number> = {
+  waiting: 0,
+  active: 1,
+  ended: 2,
+};
+
+function getNewerSessionState(
+  currentSession: Session | null,
+  snapshotSession: Session,
+): Session {
+  if (
+    currentSession &&
+    currentSession.sessionId === snapshotSession.sessionId &&
+    SESSION_STATUS_ORDER[currentSession.status] >
+      SESSION_STATUS_ORDER[snapshotSession.status]
+  ) {
+    return currentSession;
+  }
+
+  return snapshotSession;
+}
+
 export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
   session: null,
   participants: [],
@@ -64,6 +90,71 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
       participants,
       isLoading: false,
       error: null,
+    }),
+
+  mergeSnapshot: (session, participants) =>
+    set((state) => {
+      const currentByParticipantId = new Map(
+        state.participants.map((viewModel) => [
+          viewModel.participant.participantId,
+          viewModel,
+        ]),
+      );
+
+      const mergedParticipants = participants.map((snapshotViewModel) => {
+        const participantId =
+          snapshotViewModel.participant.participantId;
+
+        const currentViewModel =
+          currentByParticipantId.get(participantId);
+
+        if (!currentViewModel) {
+          return snapshotViewModel;
+        }
+
+        if (currentViewModel.participant.status === "disconnected") {
+          return currentViewModel;
+        }
+
+        const currentAnalysis = currentViewModel.latestAnalysis;
+        const snapshotAnalysis = snapshotViewModel.latestAnalysis;
+
+        const shouldKeepCurrentAnalysis =
+          currentAnalysis &&
+          (!snapshotAnalysis ||
+            isIncomingAnalysisNewer(
+              currentAnalysis.timestamp,
+              snapshotAnalysis.timestamp,
+            ));
+
+        if (snapshotViewModel.participant.status === "disconnected") {
+          return {
+            participant: snapshotViewModel.participant,
+            latestAnalysis: shouldKeepCurrentAnalysis
+              ? currentAnalysis
+              : snapshotAnalysis,
+          };
+        }
+
+        if (shouldKeepCurrentAnalysis) {
+          return {
+            participant: {
+              ...snapshotViewModel.participant,
+              status: currentViewModel.participant.status,
+            },
+            latestAnalysis: currentAnalysis,
+          };
+        }
+
+        return snapshotViewModel;
+      });
+
+      return {
+        session: getNewerSessionState(state.session, session),
+        participants: mergedParticipants,
+        isLoading: false,
+        error: null,
+      };
     }),
 
   applyAnalysisResult: (result) =>
@@ -92,6 +183,7 @@ export const useAnalysisStore = create<AnalysisStoreState>((set) => ({
       }
 
       const participants = [...state.participants];
+
       participants[participantIndex] = {
         participant: {
           ...currentParticipant.participant,

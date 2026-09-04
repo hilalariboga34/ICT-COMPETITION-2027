@@ -58,3 +58,13 @@ export interface ParticipantCreate {
 export interface SessionCreate {
   title: string;
 }
+
+export interface SessionSnapshotParticipant {
+  participant: Participant;
+  latestAnalysis: AnalysisResult | null;
+}
+
+export interface SessionSnapshotResponse {
+  session: Session;
+  participants: SessionSnapshotParticipant[];
+}
