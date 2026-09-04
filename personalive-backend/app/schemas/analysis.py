@@ -21,7 +21,7 @@ class AnalysisInput(BaseModel):
     fakeProbability: float = Field(..., ge=0.0, le=1.0)
     confidence: float = Field(..., ge=0.0, le=1.0)
     timestamp: datetime = Field(...)
-    modelVersion: str = Field(..., min_length=1)
+    modelVersion: str = Field(..., min_length=1, max_length=64)
 
     @model_validator(mode="after")
     def validate_timestamp_timezone(self) -> Self:

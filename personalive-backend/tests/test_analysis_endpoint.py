@@ -84,6 +84,17 @@ def test_evaluate_returns_http_200_for_valid_body(
     assert response.status_code == 200
 
 
+def test_evaluate_returns_http_422_when_model_version_exceeds_64_characters(
+    client: TestClient,
+) -> None:
+    body = valid_request_body()
+    body["modelVersion"] = "a" * 65
+
+    response = client.post("/api/v1/analysis/evaluate", json=body)
+
+    assert response.status_code == 422
+
+
 def test_evaluate_returns_expected_result_fields(
     client: TestClient,
     session_and_participant: tuple[SessionModel, Participant],
