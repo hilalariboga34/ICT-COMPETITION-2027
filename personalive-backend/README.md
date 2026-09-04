@@ -8,7 +8,8 @@ Mevcut analysis HTTP contract'ında ve runtime veritabanı modellerinde ham vide
 
 - `GET /health`: Servisin çalıştığını ve uygulama sürümünü bildirir.
 - `POST /api/v1/analysis/evaluate`: Analiz girdisini doğrular, sonucu PostgreSQL'e kaydeder ve participant status değerini günceller.
-- Session oluşturma/getirme ve participant oluşturma/listeleme/disconnect REST endpoint'leri.
+- Session oluşturma/getirme, session lifecycle (`start`/`end`, `waiting → active → ended`) ve participant oluşturma/listeleme/disconnect REST endpoint'leri.
+- `GET /api/v1/sessions/{session_id}/snapshot`: Session bilgisini, tüm participant'ları ve her participant'ın en son analiz sonucunu tek istekte döner; reconnect ve reload senkronizasyonu için kullanılır.
 - `WebSocket /api/v1/ws/sessions/{session_id}`: Analiz sonuçlarını aynı session kanalındaki istemcilere yayınlar.
 - Pydantic v2 veri doğrulaması (validation) ve ekstra alanların reddedilmesi.
 - Environment ayarıyla değiştirilebilen gerçeklik eşiği (`AUTHENTIC_THRESHOLD`).
@@ -156,6 +157,105 @@ Bu örnekte `fakeProbability` değeri `0.25` olduğu için `realityScore` değer
 Eşik `.env` içindeki `AUTHENTIC_THRESHOLD` ayarıyla değiştirilebilir.
 
 Bu endpoint için session ve participant önceden veritabanında bulunmalı, participant ilgili session'a ait olmalı ve status değeri `disconnected` olmamalıdır. Başarılı istekte AnalysisResult PostgreSQL'e kaydedilir ve participant status değeri `authentic` veya `suspicious` olarak güncellenir.
+
+## Session lifecycle endpoint'leri
+
+Bir session'ın durumu yalnızca şu sırayla ilerler: `waiting → active → ended`. Bu sıranın dışında bir geçiş denenirse (örn. zaten `active` olan bir session'ı tekrar başlatmak, ya da hiç başlamamış veya zaten bitmiş bir session'ı bitirmeye çalışmak) endpoint `409 Conflict` döner.
+
+### Session'ı başlatma
+
+```http
+POST /api/v1/sessions/{session_id}/start
+```
+
+Başarılı istek session'ı `waiting` durumundan `active` durumuna geçirir ve `startedAt` alanını doldurur:
+
+```json
+{
+  "sessionId": "11111111-1111-4111-8111-111111111111",
+  "title": "Weekly Review",
+  "status": "active",
+  "createdAt": "2026-01-15T12:00:00Z",
+  "startedAt": "2026-01-15T12:00:05Z",
+  "endedAt": null
+}
+```
+
+Session bulunamazsa `404` döner. Session `waiting` durumunda değilse (zaten `active` veya `ended`) `409 Conflict` döner.
+
+### Session'ı bitirme
+
+```http
+POST /api/v1/sessions/{session_id}/end
+```
+
+Yalnızca `active` durumundaki bir session bitirilebilir; session `waiting` veya zaten `ended` durumundaysa `409 Conflict` döner. Başarılı istek `status` değerini `ended` yapar, `endedAt` alanını doldurur ve **aynı transaction içinde**, o session'daki `disconnected` olmayan tüm participant'ları otomatik olarak `disconnected` durumuna geçirip `leftAt` alanlarını session'ın bitiş zamanıyla doldurur. Zaten `disconnected` olan participant'lara dokunulmaz.
+
+```json
+{
+  "sessionId": "11111111-1111-4111-8111-111111111111",
+  "title": "Weekly Review",
+  "status": "ended",
+  "createdAt": "2026-01-15T12:00:00Z",
+  "startedAt": "2026-01-15T12:00:05Z",
+  "endedAt": "2026-01-15T12:30:00Z"
+}
+```
+
+## Session snapshot endpoint'i
+
+```http
+GET /api/v1/sessions/{session_id}/snapshot
+```
+
+Bir session'ın o anki tam durumunu tek istekte döner: session bilgisi, tüm participant'lar (`disconnected` olanlar dahil, `joinedAt` sırasına göre artan) ve her participant için varsa en son analiz sonucu. Frontend bu endpoint'i özellikle **reconnect ve sayfa yenileme (reload) senkronizasyonu** için kullanır: WebSocket bağlantısı koptuktan sonra tekrar bağlanan ya da sayfayı yenileyen bir istemci, kaçırdığı WebSocket event'lerini tek tek beklemek yerine bu endpoint'ten session'ın güncel durumunu doğrudan çeker.
+
+```json
+{
+  "session": {
+    "sessionId": "11111111-1111-4111-8111-111111111111",
+    "title": "Weekly Review",
+    "status": "active",
+    "createdAt": "2026-01-15T12:00:00Z",
+    "startedAt": "2026-01-15T12:00:05Z",
+    "endedAt": null
+  },
+  "participants": [
+    {
+      "participant": {
+        "participantId": "22222222-2222-4222-8222-222222222222",
+        "sessionId": "11111111-1111-4111-8111-111111111111",
+        "displayName": "Ayşe",
+        "status": "authentic",
+        "joinedAt": "2026-01-15T12:00:10Z",
+        "leftAt": null
+      },
+      "latestAnalysis": {
+        "sessionId": "11111111-1111-4111-8111-111111111111",
+        "participantId": "22222222-2222-4222-8222-222222222222",
+        "realityScore": 0.75,
+        "confidence": 0.9,
+        "status": "authentic",
+        "timestamp": "2026-01-15T12:05:00Z",
+        "modelVersion": "analysis-v1"
+      }
+    },
+    {
+      "participant": {
+        "participantId": "33333333-3333-4333-8333-333333333333",
+        "sessionId": "11111111-1111-4111-8111-111111111111",
+        "displayName": "Mehmet",
+        "status": "analyzing",
+        "joinedAt": "2026-01-15T12:01:00Z",
+        "leftAt": null
+      },
+      "latestAnalysis": null
+    }
+  ]
+}
+```
+
+Henüz hiç analiz sonucu almamış bir participant için `latestAnalysis` alanı `null` döner (yukarıdaki "Mehmet" örneğinde olduğu gibi). Bir participant'ın birden fazla analiz sonucu varsa yalnızca `timestamp` değeri en yeni olan döner; bu sorgu session'daki tüm participant'lar için PostgreSQL'in `DISTINCT ON` özelliğiyle tek seferde çalışır ve N+1 sorgu üretmez (bkz. [`DATABASE.md`](./DATABASE.md)).
 
 ## WebSocket kullanımı
 
