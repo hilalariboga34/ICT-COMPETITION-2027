@@ -31,7 +31,7 @@ Bir analiz isteği gönderilmeden önce aşağıdaki koşullar sağlanmalıdır:
 - Participant status değeri `disconnected` olmamalıdır.
 - `timestamp`, aynı participant için kaydedilmiş en son analysis timestamp değerinden kesinlikle daha yeni olmalıdır.
 
-Session lifecycle entegrasyonu henüz pending durumdadır. Mevcut analysis servisi session'ın yalnızca varlığını kontrol eder; `waiting`, `active` veya `ended` status değerine göre analysis kabul/reddetme davranışı uygulamaz. Gerçek AI entegrasyonu bu konuda ek bir varsayım yapmamalıdır.
+Session lifecycle artık ayrı endpoint'lerle yönetilir: `POST /api/v1/sessions/{session_id}/start` ve `POST /api/v1/sessions/{session_id}/end`, session'ı `waiting → active → ended` sırasıyla geçirir; geçersiz bir geçiş `409 Conflict` döner (bkz. [`README.md`](./README.md) ve [`DATABASE.md`](./DATABASE.md)). Ancak bu analysis endpoint'i (`POST /api/v1/analysis/evaluate`) hâlâ session'ın yalnızca PostgreSQL'de var olup olmadığını kontrol eder; `waiting`, `active` veya `ended` status değerine göre analysis isteğini kabul/reddetme davranışı uygulamaz. Gerçek AI entegrasyonu, bu endpoint'in session status'una göre farklı davrandığı konusunda ek bir varsayım yapmamalıdır — bu davranışın değişip değişmeyeceği hâlâ **Pending Decisions** bölümünde işaretlidir (bkz. Bölüm 14).
 
 ## 4. Endpoint
 
@@ -328,7 +328,7 @@ Aşağıdaki konular mevcut implementasyonda kesinleşmemiştir ve bu belgenin m
 - Extension ile AI servisi arasındaki transport
 - Batch veya stream inference yaklaşımı
 - Retry/idempotency anahtarı ve belirsiz delivery sonucunu uzlaştırma yöntemi
-- Analysis kabulü için session'ın `active` olma zorunluluğu
+- Analysis kabulü için session'ın `active` olma zorunluluğu (mevcut `POST /api/v1/analysis/evaluate` endpoint'i, Bölüm 3'te belirtildiği gibi, session'ın yalnızca var olup olmadığını kontrol eder; ayrı var olan lifecycle status'una göre reddetme uygulamaz)
 - Gerçek meeting platformu entegrasyonu
 - Authentication ve authorization
 - Throughput, latency ve diğer performance hedefleri

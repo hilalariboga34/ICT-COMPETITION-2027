@@ -10,6 +10,11 @@
   `analysis_results` ve `model_versions` tablolarına yazıyor ve participant status değerini güncelliyor.
 - Analysis transaction'ı commit edildikten sonra `analysis.updated` WebSocket eventi yayımlanıyor.
   WebSocket bağlantı listesi local demo için process belleğinde (in-memory) tutuluyor.
+- Session lifecycle route'ları (`POST .../start`, `POST .../end`) `waiting → active → ended`
+  durum geçişini kilit altında yönetiyor; geçersiz bir geçiş `409 Conflict` döner. Session
+  snapshot route'u (`GET .../snapshot`) session, participant listesi ve her participant'ın en
+  son analiz sonucunu tek istekte döner; ne lifecycle ne de snapshot için yeni bir migration
+  gerekti — ikisi de mevcut tablo ve kolonlarla çalışıyor.
 - Mevcut runtime tablolarında ham video/kare/görüntü/base64/binary kolonu yok; analysis akışı
   kimlik, zaman, skor, durum ve model versiyonu gibi metadata saklıyor.
 
@@ -220,6 +225,20 @@ geçtiğini gösteriyor, sadece "DATABASE_URL yok, skip edildi" anlamına gelmiy
 - `analysis_results` insert'i ile participant status değerinin `authentic`/`suspicious` olarak
   güncellenmesi aynı transaction içindedir. Hata durumunda rollback yapılır; `analysis.updated`
   WebSocket broadcast yalnızca başarılı commit sonrasında route katmanında gerçekleşir.
+- Session `start`/`end` işlemleri session satırını `SELECT ... FOR UPDATE` ile kilitler; böylece
+  aynı session için eşzamanlı gelen iki `start` (ya da iki `end`, ya da çakışan bir `start` +
+  `end`) isteği aynı eski status'u okuyup ikisi de geçişi geçerli sanamaz. Yalnızca
+  `waiting -> active` (start) ve `active -> ended` (end) geçişleri geçerlidir; başka bir geçiş
+  denemesi `409 Conflict` ile reddedilir.
+- Session `end` edildiğinde, o session'daki hâlâ `disconnected` olmayan tüm participant'lar aynı
+  transaction içinde `disconnected` durumuna geçirilir ve `left_at` alanları session'ın
+  `ended_at` değeriyle doldurulur — session sonlanırken bazı participant'ların disconnect
+  edilip bazılarının edilmediği kısmi bir durum oluşmaz.
+- Session snapshot sorgusu (`GET /api/v1/sessions/{session_id}/snapshot`), bir session'daki her
+  participant için en son analiz sonucunu PostgreSQL'in `DISTINCT ON (participant_id)`
+  özelliğiyle tek sorguda döner (N+1 yok); `model_version` ilişkisi `joinedload` ile eager-load
+  edilir, ayrı bir sorgu tetiklemez. Bu route salt okuma yaptığı için satır kilidi (`FOR UPDATE`)
+  kullanmaz.
 - `dataset_videos.label` ve `face_samples.label`: sadece `0`, `1` ya da `NULL` olabilir.
 - `face_samples.frame_reference` ve `face_samples.face_order`: negatif olamaz (`>= 0`).
 
