@@ -94,3 +94,20 @@ def test_empty_model_version_is_rejected() -> None:
 
     with pytest.raises(ValidationError):
         AnalysisInput(**data)
+
+
+def test_model_version_with_64_characters_is_accepted() -> None:
+    data = valid_analysis_input_data()
+    data["modelVersion"] = "a" * 64
+
+    analysis_input = AnalysisInput(**data)
+
+    assert analysis_input.modelVersion == "a" * 64
+
+
+def test_model_version_above_64_characters_is_rejected() -> None:
+    data = valid_analysis_input_data()
+    data["modelVersion"] = "a" * 65
+
+    with pytest.raises(ValidationError):
+        AnalysisInput(**data)
